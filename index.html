@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Intentional Music — The Mindful Music Vault</title>
+  
+  <!-- PWA & Mobile Meta Tags -->
+  <meta name="theme-color" content="#0a0a0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Google Fonts: Inter & Outfit for game-like sleek UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            vault: {
+              950: '#060608',
+              900: '#0b0c10',
+              850: '#111218',
+              800: '#171922',
+              700: '#222533',
+              600: '#34384c',
+              gold: '#f59e0b',
+              glow: '#fbbf24',
+              yt: '#ff0033',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-vault-950 text-neutral-100 min-h-screen flex flex-col font-sans select-none overflow-x-hidden">
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="sticky top-0 z-40 bg-vault-900/90 backdrop-blur-md border-b border-vault-800/80 px-4 md:px-8 py-3 flex items-center justify-between gap-4">
+    <!-- Brand / Logo -->
+    <div class="flex items-center gap-3 cursor-pointer" id="nav-brand">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 via-vault-yt to-amber-500 p-0.5 shadow-lg shadow-red-950/40 flex items-center justify-center">
+        <div class="w-full h-full bg-vault-950 rounded-[10px] flex items-center justify-center">
+          <i data-lucide="disc-3" class="w-5 h-5 text-red-500 animate-spin-slow"></i>
+        </div>
+      </div>
+      <div>
+        <h1 class="font-display font-bold text-lg tracking-wider text-white flex items-center gap-2">
+          INTENTIONAL <span class="text-xs px-2 py-0.5 rounded-full bg-red-950/70 text-red-400 border border-red-800/60 font-semibold tracking-normal">VAULT</span>
+        </h1>
+        <p class="text-[11px] text-neutral-400 tracking-wide">Steam-Style Music Completion</p>
+      </div>
+    </div>
+
+    <!-- Search Bar with Unfiltered YouTube Switch -->
+    <div class="flex-1 max-w-xl relative">
+      <div class="relative flex items-center">
+        <i data-lucide="search" class="w-4 h-4 text-neutral-400 absolute left-3.5 pointer-events-none"></i>
+        <input 
+          type="text" 
+          id="global-search-input" 
+          placeholder="Search band or artist (e.g. Pink Floyd, Daft Punk, Radiohead)..." 
+          class="w-full bg-vault-850 hover:bg-vault-800 focus:bg-vault-800 text-sm rounded-full pl-10 pr-36 py-2 border border-vault-700/60 focus:border-red-500/80 focus:outline-none transition-all placeholder:text-neutral-500 text-neutral-200"
+        />
+        <!-- Search Mode Toggle Pill -->
+        <button 
+          id="search-mode-toggle"
+          title="Toggle between Curated Discography and Unfiltered YouTube Search"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full bg-vault-700 hover:bg-vault-600 border border-vault-600 text-neutral-300 transition-colors"
+        >
+          <span id="search-mode-indicator" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span id="search-mode-label">Curated</span>
+        </button>
+      </div>
+      
+      <!-- Live Search Suggestions / Dropdown Results -->
+      <div id="search-results-dropdown" class="hidden absolute left-0 right-0 top-full mt-2 bg-vault-900 border border-vault-700 rounded-2xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto divide-y divide-vault-800">
+        <!-- Results injected here -->
+      </div>
+    </div>
+
+    <!-- Right Controls: Stats & Account -->
+    <div class="flex items-center gap-3">
+      <!-- Quick Vault Completion Badge -->
+      <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-vault-850 border border-vault-700 rounded-full text-xs" title="Total Vault Completion Rate">
+        <i data-lucide="trophy" class="w-4 h-4 text-amber-400"></i>
+        <span class="text-neutral-400">Vault:</span>
+        <span id="header-vault-rate" class="font-bold text-amber-400 font-display">0%</span>
+      </div>
+
+      <!-- Cloud Sync / Firebase Google Login -->
+      <button 
+        id="btn-user-account" 
+        class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-vault-800 hover:bg-vault-700 border border-vault-700 text-xs font-medium transition-all"
+      >
+        <i data-lucide="user" class="w-4 h-4 text-neutral-300"></i>
+        <span id="user-account-label">Sign In</span>
+      </button>
+
+      <!-- Settings / Firebase Config Button -->
+      <button 
+        id="btn-settings" 
+        class="p-2 rounded-full bg-vault-850 hover:bg-vault-700 border border-vault-700 text-neutral-400 hover:text-white transition-colors"
+        title="Settings & Cloud Sync Config"
+      >
+        <i data-lucide="settings" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN APP CONTAINER ================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 flex flex-col gap-6 pb-36">
+
+    <!-- VIEW 1: STEAM LIBRARY / VAULT VIEW -->
+    <section id="view-vault" class="flex flex-col gap-6">
+      
+      <!-- Hero / Motivation Banner -->
+      <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-vault-900 via-vault-850 to-vault-900 border border-vault-800 p-6 md:p-8">
+        <div class="absolute -right-16 -top-16 w-64 h-64 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -left-16 -bottom-16 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div class="space-y-2 max-w-2xl">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-950/40 border border-red-800/40 text-red-400 text-xs font-medium">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+              Mindful Audio Only • No Recommendation Traps
+            </div>
+            <h2 class="text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight">
+              Your Intentional Music Vault
+            </h2>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Listen to full albums in their original track order. Unexplored bands are locked in grayscale — play at least <span class="text-amber-400 font-semibold">90% of every song</span> to unlock vivid album art, completion badges, and golden prestige borders.
+            </p>
+          </div>
+
+          <!-- Overall Stats Card -->
+          <div class="flex items-center gap-4 bg-vault-950/70 border border-vault-800 rounded-2xl p-4 shrink-0">
+            <div class="text-center px-2">
+              <div id="stat-total-bands" class="text-2xl font-display font-bold text-white">0</div>
+              <div class="text-[11px] text-neutral-400 uppercase tracking-wider mt-0.5">Bands</div>
+            </div>
+            <div class="h-8 w-px bg-vault-800"></div>
+            <div class="text-center px-2">
+              <div id="stat-songs-completed" class="text-2xl font-display font-bold text-emerald-400">0</div>
+              <div class="text-[11px] text-neutral-400 uppercase tracking-wider mt-0.5">Songs (90%+)</div>
+            </div>
+            <div class="h-8 w-px bg-vault-800"></div>
+            <div class="text-center px-2">
+              <div id="stat-gold-mastered" class="text-2xl font-display font-bold text-amber-400">0</div>
+              <div class="text-[11px] text-neutral-400 uppercase tracking-wider mt-0.5">Mastered</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter & Sort Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-vault-850">
+        <!-- Genre / Category Pills -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1 max-w-full text-xs font-medium scrollbar-none" id="genre-filters">
+          <button class="genre-pill active px-3.5 py-1.5 rounded-full bg-red-600 text-white transition-all shadow-md shadow-red-900/30" data-genre="all">
+            All Vault
+          </button>
+          <button class="genre-pill px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 text-neutral-300 border border-vault-700/60 transition-all" data-genre="Rock">
+            Rock & Metal
+          </button>
+          <button class="genre-pill px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 text-neutral-300 border border-vault-700/60 transition-all" data-genre="Electronic">
+            Electronic
+          </button>
+          <button class="genre-pill px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 text-neutral-300 border border-vault-700/60 transition-all" data-genre="Hip Hop">
+            Hip Hop
+          </button>
+          <button class="genre-pill px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 text-neutral-300 border border-vault-700/60 transition-all" data-genre="Alternative">
+            Alternative
+          </button>
+          <button class="genre-pill px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 text-neutral-300 border border-vault-700/60 transition-all" data-genre="Jazz">
+            Jazz & Soul
+          </button>
+        </div>
+
+        <!-- Completion Filter Dropdown -->
+        <div class="flex items-center gap-3">
+          <label for="completion-filter" class="text-xs text-neutral-400 hidden sm:inline">Status:</label>
+          <select id="completion-filter" class="bg-vault-850 border border-vault-700 text-xs rounded-xl px-3 py-1.5 text-neutral-200 focus:outline-none focus:border-red-500">
+            <option value="all">All States</option>
+            <option value="unplayed">Locked (0% unplayed)</option>
+            <option value="in-progress">In Progress (&gt;0% &lt;100%)</option>
+            <option value="completed">100% Mastered</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Steam-Style Bands Grid -->
+      <div id="bands-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
+        <!-- Rendered dynamically via vault.js -->
+      </div>
+      
+      <!-- Empty State -->
+      <div id="vault-empty-state" class="hidden flex-col items-center justify-center p-16 text-center border border-dashed border-vault-800 rounded-3xl">
+        <i data-lucide="music-2" class="w-12 h-12 text-neutral-600 mb-3"></i>
+        <h3 class="text-lg font-bold text-neutral-300">No artists match your filter</h3>
+        <p class="text-xs text-neutral-500 mt-1 max-w-sm">Use the search bar at the top to discover and add any band or artist directly into your Intentional Vault.</p>
+      </div>
+    </section>
+
+    <!-- VIEW 2: ARTIST / DISCOGRAPHY VIEW -->
+    <section id="view-artist" class="hidden flex-col gap-6">
+      
+      <!-- Breadcrumb & Back Button -->
+      <div class="flex items-center justify-between">
+        <button id="btn-back-to-vault" class="inline-flex items-center gap-2 text-xs font-medium text-neutral-400 hover:text-white px-3 py-1.5 rounded-full bg-vault-900 border border-vault-800 hover:border-vault-700 transition-colors">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i>
+          Back to Vault
+        </button>
+        
+        <!-- Info & Members Button -->
+        <button id="btn-artist-info" class="inline-flex items-center gap-2 text-xs font-medium text-neutral-300 hover:text-white px-3.5 py-1.5 rounded-full bg-vault-850 hover:bg-vault-800 border border-vault-700 transition-colors">
+          <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+          Band Members & Bio
+        </button>
+      </div>
+
+      <!-- Artist Hero Banner -->
+      <div id="artist-hero-card" class="relative rounded-3xl overflow-hidden bg-vault-900 border border-vault-800 p-6 md:p-8 flex flex-col md:flex-row items-center gap-6">
+        <!-- Injected dynamically in app.js -->
+      </div>
+
+      <!-- Discography Section -->
+      <div class="space-y-4">
+        <div class="flex items-center justify-between border-b border-vault-800 pb-3">
+          <div class="flex items-center gap-3">
+            <h3 class="text-xl font-display font-bold text-white">Chronological Discography</h3>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-vault-800 border border-vault-700 text-neutral-400" id="artist-album-count">0 Albums</span>
+          </div>
+          <p class="text-xs text-neutral-500 hidden sm:block">Filtered to official studio and iconic live releases</p>
+        </div>
+
+        <!-- Album Cards Grid / List -->
+        <div id="artist-albums-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: ALBUM TRACKLIST VIEW (YouTube Music Style) -->
+    <section id="view-album" class="hidden flex-col gap-6">
+      <!-- Back to Artist Button -->
+      <div class="flex items-center justify-between">
+        <button id="btn-back-to-artist" class="inline-flex items-center gap-2 text-xs font-medium text-neutral-400 hover:text-white px-3 py-1.5 rounded-full bg-vault-900 border border-vault-800 hover:border-vault-700 transition-colors">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i>
+          Back to <span id="back-to-artist-name">Artist</span>
+        </button>
+        <button id="btn-play-full-album" class="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-950/60 transition-transform active:scale-95">
+          <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+          Play Album in Order
+        </button>
+      </div>
+
+      <!-- Album Header (YT Music layout) -->
+      <div id="album-header-container" class="flex flex-col md:flex-row gap-6 md:gap-8 items-start md:items-end bg-vault-900/80 border border-vault-800/80 rounded-3xl p-6 md:p-8">
+        <!-- Injected dynamically -->
+      </div>
+
+      <!-- Album Track Table -->
+      <div class="bg-vault-900/60 border border-vault-850 rounded-2xl overflow-hidden">
+        <table class="w-full text-left text-sm">
+          <thead class="text-[11px] uppercase tracking-wider text-neutral-400 border-b border-vault-800 bg-vault-900/90">
+            <tr>
+              <th class="py-3 px-4 w-12 text-center">#</th>
+              <th class="py-3 px-4">Title</th>
+              <th class="py-3 px-4 hidden sm:table-cell text-neutral-400">Status</th>
+              <th class="py-3 px-4 hidden md:table-cell text-right">Listens</th>
+              <th class="py-3 px-4 text-right w-20">Length</th>
+              <th class="py-3 px-4 w-12 text-center"></th>
+            </tr>
+          </thead>
+          <tbody id="album-tracks-tbody" class="divide-y divide-vault-850">
+            <!-- Tracks injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= DISGUISED YOUTUBE MUSIC DOCKED PLAYER ================= -->
+  <footer id="disguised-player-bar" class="fixed bottom-0 left-0 right-0 z-50 bg-vault-900/95 backdrop-blur-xl border-t border-vault-800 px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-2 shadow-2xl transition-all">
+    
+    <!-- Left: Track Info & Album Art -->
+    <div class="flex items-center gap-3 w-full md:w-1/4 min-w-0">
+      <div class="relative w-12 h-12 rounded-lg bg-vault-800 overflow-hidden shrink-0 border border-vault-700 shadow-md">
+        <img id="player-track-art" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=120" alt="Album Art" class="w-full h-full object-cover">
+        <!-- 90% Achievement Indicator Badge -->
+        <div id="player-track-completed-badge" class="hidden absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[9px] font-bold shadow">
+          ✓
+        </div>
+      </div>
+      
+      <div class="min-w-0 flex-1">
+        <div id="player-track-title" class="font-semibold text-sm text-neutral-100 truncate hover:text-white cursor-pointer">
+          Select a track to start listening
+        </div>
+        <div class="text-xs text-neutral-400 truncate flex items-center gap-2">
+          <span id="player-track-artist">Intentional Vault</span>
+          <span class="text-neutral-600">•</span>
+          <span id="player-track-album" class="text-neutral-500 truncate">Audio Mode</span>
+        </div>
+      </div>
+
+      <!-- Like / Heart Button -->
+      <button id="btn-player-like" class="p-2 text-neutral-400 hover:text-red-500 transition-colors" title="Like Track">
+        <i data-lucide="heart" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Center: Playback Controls & 90% Progress Slider -->
+    <div class="flex flex-col items-center w-full md:w-2/4 max-w-xl gap-1">
+      <div class="flex items-center gap-4">
+        <button id="btn-player-prev" class="p-1.5 text-neutral-400 hover:text-white transition-colors" title="Previous Track">
+          <i data-lucide="skip-back" class="w-4 h-4"></i>
+        </button>
+
+        <button id="btn-player-play-toggle" class="w-9 h-9 rounded-full bg-white hover:bg-neutral-200 text-vault-950 flex items-center justify-center shadow-lg transition-transform active:scale-95">
+          <i id="player-play-icon" data-lucide="play" class="w-4 h-4 fill-current ml-0.5"></i>
+        </button>
+
+        <button id="btn-player-next" class="p-1.5 text-neutral-400 hover:text-white transition-colors" title="Next Track">
+          <i data-lucide="skip-forward" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Seek Bar with 90% Marker -->
+      <div class="w-full flex items-center gap-2 text-[11px] font-mono text-neutral-400">
+        <span id="player-current-time" class="w-10 text-right">0:00</span>
+        
+        <div class="relative flex-1 py-2 flex items-center group cursor-pointer" id="player-progress-container">
+          <!-- Background track -->
+          <div class="w-full h-1 bg-vault-700/80 rounded-full overflow-hidden relative">
+            <div id="player-progress-fill" class="h-full bg-red-600 rounded-full w-0 transition-all duration-150"></div>
+          </div>
+          <!-- 90% Achievement Goalpost Marker -->
+          <div class="absolute right-[10%] top-1/2 -translate-y-1/2 w-1.5 h-3 bg-amber-400 rounded-full shadow-sm pointer-events-none" title="90% Completion Goal"></div>
+        </div>
+
+        <span id="player-duration" class="w-10">0:00</span>
+      </div>
+    </div>
+
+    <!-- Right: Volume & 90% Status Toast -->
+    <div class="hidden md:flex items-center justify-end gap-3 w-1/4">
+      <div id="player-90-status" class="text-[11px] px-2 py-0.5 rounded bg-vault-800 border border-vault-700 text-amber-400 flex items-center gap-1 font-mono">
+        <i data-lucide="award" class="w-3 h-3 text-amber-400"></i>
+        <span id="player-completion-pct">0%</span> / 90%
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="btn-player-mute" class="text-neutral-400 hover:text-white transition-colors">
+          <i data-lucide="volume-2" class="w-4 h-4"></i>
+        </button>
+        <input 
+          type="range" 
+          id="player-volume-slider" 
+          min="0" 
+          max="100" 
+          value="80" 
+          class="w-20 h-1 bg-vault-700 rounded-lg appearance-none cursor-pointer accent-red-600"
+        />
+      </div>
+    </div>
+  </footer>
+
+  <!-- ================= INVISIBLE YOUTUBE IFRAME DOCK ================= -->
+  <!-- Kept off-screen/hidden to give true pure-audio immersion without distractions -->
+  <div id="youtube-hidden-container" class="opacity-0 pointer-events-none absolute -left-[9999px] -top-[9999px] w-[200px] h-[200px]">
+    <div id="youtube-iframe-target"></div>
+  </div>
+
+  <!-- ================= MODAL: ARTIST BIO & MEMBERS ================= -->
+  <div id="modal-artist-bio" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-vault-900 border border-vault-700 rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fade-in">
+      <div class="p-5 border-b border-vault-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="book-open" class="w-4 h-4 text-amber-400"></i>
+          <h4 id="bio-modal-title" class="font-display font-bold text-lg text-white">Artist Details</h4>
+        </div>
+        <button id="btn-close-bio-modal" class="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-vault-800 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto space-y-4 text-sm text-neutral-300">
+        <!-- Members List -->
+        <div>
+          <h5 class="text-xs uppercase tracking-wider text-neutral-400 font-bold mb-2 flex items-center gap-1.5">
+            <i data-lucide="users" class="w-3.5 h-3.5 text-neutral-400"></i>
+            Key Members & Roles
+          </h5>
+          <div id="bio-modal-members" class="flex flex-wrap gap-2">
+            <!-- Members badges -->
+          </div>
+        </div>
+
+        <!-- Biography Summary -->
+        <div>
+          <h5 class="text-xs uppercase tracking-wider text-neutral-400 font-bold mb-2 flex items-center gap-1.5">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-neutral-400"></i>
+            Summary
+          </h5>
+          <p id="bio-modal-extract" class="text-neutral-300 leading-relaxed text-xs">
+            Loading summary...
+          </p>
+        </div>
+
+        <div id="bio-modal-ext-link" class="pt-2">
+          <!-- External Wikipedia link -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: FIREBASE / SETTINGS ================= -->
+  <div id="modal-settings" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-vault-900 border border-vault-700 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden animate-fade-in">
+      <div class="p-5 border-b border-vault-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="settings" class="w-4 h-4 text-red-500"></i>
+          <h4 class="font-display font-bold text-lg text-white">Cloud Sync & Settings</h4>
+        </div>
+        <button id="btn-close-settings" class="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-vault-800 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs text-neutral-300">
+        <div class="p-3 rounded-2xl bg-vault-850 border border-vault-800 space-y-1">
+          <div class="font-semibold text-white flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+            Local-First & Private
+          </div>
+          <p class="text-neutral-400 leading-relaxed text-[11px]">
+            Your progress and unlocked bands are securely stored in your browser's private LocalStorage automatically. To sync seamlessly across all your devices, you can optionally connect Firebase Google Auth below.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-neutral-400 font-semibold mb-1">Firebase Project Config (Optional for Multi-Device Cloud Sync)</label>
+          <textarea 
+            id="settings-firebase-config" 
+            rows="4" 
+            placeholder='{"apiKey": "...", "authDomain": "...", "projectId": "..."}'
+            class="w-full bg-vault-950 border border-vault-800 rounded-xl p-2.5 font-mono text-[11px] text-neutral-200 focus:outline-none focus:border-red-500"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-2">
+          <button id="btn-save-settings" class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors">
+            Save Settings
+          </button>
+          <button id="btn-reset-storage" class="px-3 py-2 text-neutral-500 hover:text-red-400 transition-colors">
+            Reset All Vault Data
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ================= APPLICATION SCRIPTS ================= -->
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <!-- Modular App Scripts -->
+  <script type="module" src="js/app.js"></script>
+
+</body>
+</html>
