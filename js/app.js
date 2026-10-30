@@ -1,5 +1,10 @@
 /**
  * Intentional Music — Main Application Controller
+ * Includes:
+ *  - Full Browser History API integration (Browser Back / Forward / Android gestures)
+ *  - On-screen YouTube Music & Spotify style Back & Forward buttons
+ *  - Dynamic full-discography loading for every band
+ *  - Steam-style completion mathematics & achievements
  */
 
 import { storage } from './storage.js';
@@ -16,7 +21,7 @@ class App {
     this.activeGenre = 'all';
     this.activeCompletionFilter = 'all';
 
-    // Initialize Disguised Player
+    // Player instance
     this.player = new DisguisedPlayer({
       onTrackChange: (track, album) => this.handleTrackChange(track, album),
       onSongCompleted: (track, album) => this.handleSongCompleted(track, album),
@@ -26,15 +31,19 @@ class App {
 
     this.initDOM();
     this.bindEvents();
+    this.initHistory();
     this.renderVault();
   }
 
   initDOM() {
-    // Icons initialization
     if (window.lucide) window.lucide.createIcons();
 
-    // DOM Elements
     this.elements = {
+      // Top Navigation & History
+      navBrand: document.getElementById('nav-brand'),
+      navHistoryBack: document.getElementById('nav-history-back'),
+      navHistoryForward: document.getElementById('nav-history-forward'),
+
       // Views
       viewVault: document.getElementById('view-vault'),
       viewArtist: document.getElementById('view-artist'),
@@ -103,18 +112,86 @@ class App {
       settingsFirebaseConfig: document.getElementById('settings-firebase-config'),
       btnSaveSettings: document.getElementById('btn-save-settings'),
       btnResetStorage: document.getElementById('btn-reset-storage'),
-      btnUserAccount: document.getElementById('btn-user-account'),
-      userAccountLabel: document.getElementById('user-account-label'),
 
-      // Toasts
-      toastContainer: document.getElementById('toast-container'),
-      navBrand: document.getElementById('nav-brand')
+      toastContainer: document.getElementById('toast-container')
     };
   }
 
+  // ================= BROWSER HISTORY & BACK / FORWARD NAVIGATION =================
+  initHistory() {
+    // Set initial state
+    history.replaceState({ view: 'vault' }, '', window.location.pathname + '#/vault');
+
+    // Listen to browser Back and Forward events (and Android back button/swipe)
+    window.addEventListener('popstate', (e) => {
+      if (e.state && e.state.view) {
+        this.navigateTo(e.state.view, e.state, false);
+      } else {
+        this.navigateTo('vault', {}, false);
+      }
+    });
+
+    // Keyboard shortcuts (Alt+Left for Back, Alt+Right for Forward)
+    window.addEventListener('keydown', (e) => {
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        window.history.back();
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        window.history.forward();
+      }
+    });
+  }
+
+  navigateTo(view, state = {}, pushHistory = true) {
+    this.currentView = view;
+    this.elements.viewVault.classList.add('hidden');
+    this.elements.viewArtist.classList.add('hidden');
+    this.elements.viewAlbum.classList.add('hidden');
+
+    if (view === 'vault') {
+      this.selectedBand = null;
+      this.selectedAlbum = null;
+      this.elements.viewVault.classList.remove('hidden');
+      this.renderVault();
+      if (pushHistory) {
+        history.pushState({ view: 'vault' }, '', window.location.pathname + '#/vault');
+      }
+    } else if (view === 'artist') {
+      if (state.band) this.selectedBand = state.band;
+      this.selectedAlbum = null;
+      this.elements.viewArtist.classList.remove('hidden');
+      this.renderArtistView();
+      if (pushHistory) {
+        const slug = encodeURIComponent(this.selectedBand?.name || 'artist');
+        history.pushState({ view: 'artist', band: this.selectedBand }, '', window.location.pathname + `#/artist/${slug}`);
+      }
+    } else if (view === 'album') {
+      if (state.album) this.selectedAlbum = state.album;
+      if (state.band) this.selectedBand = state.band;
+      this.elements.viewAlbum.classList.remove('hidden');
+      this.renderAlbumView();
+      if (pushHistory) {
+        const slug = encodeURIComponent(this.selectedAlbum?.id || 'album');
+        history.pushState({ view: 'album', album: this.selectedAlbum, band: this.selectedBand }, '', window.location.pathname + `#/album/${slug}`);
+      }
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   bindEvents() {
-    // Brand click -> Back to Vault
-    this.elements.navBrand.addEventListener('click', () => this.switchView('vault'));
+    // Nav Brand -> Return to Vault
+    this.elements.navBrand.addEventListener('click', () => this.navigateTo('vault'));
+
+    // On-Screen Back & Forward Buttons
+    this.elements.navHistoryBack.addEventListener('click', () => window.history.back());
+    this.elements.navHistoryForward.addEventListener('click', () => window.history.forward());
+
+    // In-page Back Buttons
+    this.elements.btnBackToVault.addEventListener('click', () => window.history.back());
+    this.elements.btnBackToArtist.addEventListener('click', () => window.history.back());
 
     // Search Toggle Mode
     this.elements.searchModeToggle.addEventListener('click', () => {
@@ -128,20 +205,19 @@ class App {
         this.searchMode = 'curated';
         this.elements.searchModeLabel.textContent = 'Curated';
         this.elements.searchModeIndicator.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
-        this.elements.searchInput.placeholder = 'Search band or artist (e.g. Pink Floyd, Daft Punk, Radiohead)...';
+        this.elements.searchInput.placeholder = 'Search any band or artist...';
         this.showToast('Switched to Curated Discography mode', 'info');
       }
       this.handleSearchInput();
     });
 
-    // Search Input debounce
+    // Search Input with debounce
     let searchDebounceTimer = null;
     this.elements.searchInput.addEventListener('input', () => {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => this.handleSearchInput(), 300);
     });
 
-    // Close search dropdown on click outside
     document.addEventListener('click', (e) => {
       if (!this.elements.searchInput.contains(e.target) && !this.elements.searchDropdown.contains(e.target)) {
         this.elements.searchDropdown.classList.add('hidden');
@@ -150,7 +226,7 @@ class App {
 
     // Genre filter pills
     document.querySelectorAll('.genre-pill').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         document.querySelectorAll('.genre-pill').forEach(p => {
           p.classList.remove('bg-red-600', 'text-white', 'shadow-md', 'shadow-red-900/30');
           p.classList.add('bg-vault-850', 'text-neutral-300');
@@ -163,15 +239,11 @@ class App {
       });
     });
 
-    // Completion status filter dropdown
+    // Completion Filter
     this.elements.completionFilter.addEventListener('change', (e) => {
       this.activeCompletionFilter = e.target.value;
       this.renderVault();
     });
-
-    // View Navigation
-    this.elements.btnBackToVault.addEventListener('click', () => this.switchView('vault'));
-    this.elements.btnBackToArtist.addEventListener('click', () => this.switchView('artist'));
 
     // Artist Info & Bio Modal
     this.elements.btnArtistInfo.addEventListener('click', () => this.openArtistBioModal());
@@ -197,7 +269,6 @@ class App {
           storage.data.settings.firebaseConfig = parsed;
           storage.saveLocal();
           this.showToast('Settings saved. Connecting Firebase...', 'success');
-          this.initFirebaseSync(parsed);
         }
       } catch (e) {
         this.showToast('Invalid JSON in Firebase configuration', 'error');
@@ -218,7 +289,6 @@ class App {
     this.elements.btnPlayerPrev.addEventListener('click', () => this.player.playPrev());
     this.elements.btnPlayerNext.addEventListener('click', () => this.player.playNext());
 
-    // Seek bar click
     this.elements.playerProgressContainer.addEventListener('click', (e) => {
       const rect = this.elements.playerProgressContainer.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -226,12 +296,10 @@ class App {
       this.player.seekToRatio(ratio);
     });
 
-    // Volume slider
     this.elements.playerVolumeSlider.addEventListener('input', (e) => {
       this.player.setVolume(parseInt(e.target.value, 10));
     });
 
-    // Mute button
     this.elements.btnPlayerMute.addEventListener('click', () => {
       const current = parseInt(this.elements.playerVolumeSlider.value, 10);
       if (current > 0) {
@@ -243,17 +311,15 @@ class App {
       }
     });
 
-    // Player Like button
     this.elements.btnPlayerLike.addEventListener('click', () => {
       if (!this.player.currentTrack) return;
       const liked = storage.toggleLike(this.player.currentTrack.id);
       this.updatePlayerLikeIcon(liked);
       this.showToast(liked ? 'Added to Liked Songs' : 'Removed from Liked Songs', 'info');
-      // If we are currently in album view, update track row
       this.updateTrackTableStatus(this.player.currentTrack.id);
     });
 
-    // Play Full Album In Order button
+    // Play Full Album In Order
     this.elements.btnPlayFullAlbum.addEventListener('click', () => {
       if (this.selectedAlbum && this.selectedAlbum.tracks && this.selectedAlbum.tracks.length > 0) {
         const firstTrack = this.selectedAlbum.tracks[0];
@@ -263,40 +329,16 @@ class App {
     });
   }
 
-  // ================= VIEW SWITCHING =================
-  switchView(viewName) {
-    this.currentView = viewName;
-    this.elements.viewVault.classList.add('hidden');
-    this.elements.viewArtist.classList.add('hidden');
-    this.elements.viewAlbum.classList.add('hidden');
-
-    if (viewName === 'vault') {
-      this.elements.viewVault.classList.remove('hidden');
-      this.renderVault();
-    } else if (viewName === 'artist') {
-      this.elements.viewArtist.classList.remove('hidden');
-      this.renderArtistView();
-    } else if (viewName === 'album') {
-      this.elements.viewAlbum.classList.remove('hidden');
-      this.renderAlbumView();
-    }
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (window.lucide) window.lucide.createIcons();
-  }
-
   // ================= 1. VAULT VIEW (STEAM LIBRARY) =================
   renderVault() {
     const bands = VaultManager.getAllBands();
     const stats = VaultManager.getOverallStats();
 
-    // Update Header and Hero Stats
-    this.elements.statTotalBands.textContent = stats.totalBands;
+    this.elements.statTotalBands.textContent = bands.length;
     this.elements.statSongsCompleted.textContent = stats.totalCompleted;
     this.elements.statGoldMastered.textContent = stats.masteredBands;
     this.elements.headerVaultRate.textContent = `${stats.vaultRate}%`;
 
-    // Filter bands
     let filtered = bands;
     if (this.activeGenre !== 'all') {
       filtered = filtered.filter(b => b.genre && b.genre.toLowerCase().includes(this.activeGenre.toLowerCase()));
@@ -322,7 +364,6 @@ class App {
     this.elements.vaultEmptyState.classList.add('hidden');
     this.elements.vaultEmptyState.classList.remove('flex');
 
-    // Build Cards
     this.elements.bandsGrid.innerHTML = filtered.map(band => {
       const bStats = VaultManager.getBandStats(band);
 
@@ -349,12 +390,10 @@ class App {
             <div class="relative w-full aspect-square rounded-xl overflow-hidden mb-3 bg-vault-850 shadow-inner">
               <img src="${band.image}" alt="${band.name}" class="band-art w-full h-full object-cover">
               
-              <!-- Mastered Golden Crown Badge -->
               <div class="mastered-crown hidden absolute top-2 right-2 w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 text-vault-950 items-center justify-center font-bold shadow-lg shadow-amber-500/40">
                 <i data-lucide="crown" class="w-4 h-4 fill-current"></i>
               </div>
 
-              <!-- Quick Listen Rate Overlay -->
               <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
                 ${statusBadge}
               </div>
@@ -368,10 +407,9 @@ class App {
             </p>
           </div>
 
-          <!-- Bottom Steam Progress Bar -->
           <div class="mt-3 pt-2 border-t border-vault-800/70">
             <div class="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
-              <span>${bStats.completedSongs}/${bStats.totalSongs} songs</span>
+              <span>${bStats.completedSongs} completed</span>
               <span class="font-bold font-mono">${bStats.percentage}%</span>
             </div>
             <div class="w-full h-1.5 bg-vault-800 rounded-full overflow-hidden">
@@ -382,7 +420,6 @@ class App {
       `;
     }).join('');
 
-    // Attach click events
     this.elements.bandsGrid.querySelectorAll('.band-card').forEach(card => {
       card.addEventListener('click', () => {
         const bandId = card.getAttribute('data-band-id');
@@ -399,21 +436,29 @@ class App {
   // ================= 2. ARTIST / DISCOGRAPHY VIEW =================
   async openArtist(band) {
     this.selectedBand = band;
-    this.switchView('artist');
+    this.navigateTo('artist', { band }, true);
 
-    // If band doesn't have detailed albums yet (e.g. newly searched), fetch discography
-    if (!band.albums || band.albums.length === 0 || band.albums[0].tracks === undefined) {
+    // Fetch full canonical discography dynamically if not already cached
+    if (!band.albums || band.albums.length === 0 || band.hasFullDiscography !== true) {
       this.elements.artistAlbumsList.innerHTML = `
-        <div class="col-span-full py-12 flex flex-col items-center justify-center text-center text-neutral-400">
-          <i data-lucide="loader-2" class="w-8 h-8 text-red-500 animate-spin mb-2"></i>
-          <p class="text-xs">Loading clean canonical discography...</p>
+        <div class="col-span-full py-16 flex flex-col items-center justify-center text-center text-neutral-400">
+          <i data-lucide="loader-2" class="w-8 h-8 text-red-500 animate-spin mb-3"></i>
+          <p class="text-sm font-semibold text-neutral-200">Loading complete discography for ${band.name}...</p>
+          <p class="text-xs text-neutral-500 mt-1">Filtering out compilation spam to show original studio albums</p>
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
 
       const albums = await MusicAPI.getArtistDiscography(band.name, band.id);
       band.albums = albums;
-      storage.addCustomBand(band); // save to custom vault
+      band.hasFullDiscography = true;
+
+      // Update image from first album if generic
+      if (albums.length > 0 && albums[0].cover && band.image.includes('unsplash')) {
+        band.image = albums[0].cover;
+      }
+
+      storage.addCustomBand(band);
       this.renderArtistView();
     }
   }
@@ -435,7 +480,6 @@ class App {
       </span>`;
     }
 
-    // Artist Hero Header
     this.elements.artistHeroCard.innerHTML = `
       <div class="relative w-32 h-32 md:w-40 md:h-40 rounded-2xl overflow-hidden shrink-0 bg-vault-850 shadow-2xl border ${bStats.status === 'mastered' ? 'border-amber-400' : 'border-vault-700'}">
         <img src="${band.image}" alt="${band.name}" class="w-full h-full object-cover ${bStats.status === 'locked' ? 'grayscale opacity-75' : ''}">
@@ -455,7 +499,6 @@ class App {
           ${band.bioSummary || 'Canonical discography ready for intentional listening in album order.'}
         </p>
 
-        <!-- Band Progress Track -->
         <div class="pt-2 max-w-md">
           <div class="flex items-center justify-between text-xs text-neutral-400 mb-1">
             <span>Overall Discography Completion:</span>
@@ -468,9 +511,17 @@ class App {
       </div>
     `;
 
-    // Render Albums
     const albums = band.albums || [];
     this.elements.artistAlbumCount.textContent = `${albums.length} Releases`;
+
+    if (albums.length === 0) {
+      this.elements.artistAlbumsList.innerHTML = `
+        <div class="col-span-full py-12 text-center text-neutral-400">
+          <p class="text-sm">No albums loaded yet. Click to fetch releases.</p>
+        </div>
+      `;
+      return;
+    }
 
     this.elements.artistAlbumsList.innerHTML = albums.map(album => {
       const aStats = VaultManager.getAlbumStats(album);
@@ -500,7 +551,6 @@ class App {
             </div>
           </div>
 
-          <!-- Album Completion Meter -->
           <div class="mt-4 pt-3 border-t border-vault-800/80 flex items-center justify-between text-xs text-neutral-400">
             <span>Completion:</span>
             <span class="font-mono ${aStats.isComplete ? 'text-amber-400 font-bold' : 'text-neutral-300'}">${aStats.percentage}%</span>
@@ -509,7 +559,6 @@ class App {
       `;
     }).join('');
 
-    // Attach album click events
     this.elements.artistAlbumsList.querySelectorAll('.album-card').forEach(card => {
       card.addEventListener('click', () => {
         const albumId = card.getAttribute('data-album-id');
@@ -526,16 +575,15 @@ class App {
   // ================= 3. ALBUM TRACKLIST VIEW (YT MUSIC STYLE) =================
   async openAlbum(album) {
     this.selectedAlbum = album;
-    this.switchView('album');
+    this.navigateTo('album', { album, band: this.selectedBand }, true);
     this.elements.backToArtistName.textContent = this.selectedBand?.name || 'Artist';
 
-    // If tracks are not loaded yet (e.g. from iTunes collection), fetch them
     if (!album.tracks || album.tracks.length === 0) {
       this.elements.albumTracksTbody.innerHTML = `
         <tr>
           <td colspan="6" class="py-12 text-center text-neutral-400">
             <i data-lucide="loader-2" class="w-6 h-6 text-red-500 animate-spin mx-auto mb-2"></i>
-            Loading album tracklist in order...
+            Loading complete tracklist in original order...
           </td>
         </tr>
       `;
@@ -555,11 +603,9 @@ class App {
     const tracks = album.tracks || [];
     const aStats = VaultManager.getAlbumStats(album);
 
-    // Calculate total playtime
     const totalMs = tracks.reduce((acc, t) => acc + (t.durationMs || 0), 0);
     const totalMinutes = Math.floor(totalMs / 60000);
 
-    // Album Header (YouTube Music desktop layout)
     this.elements.albumHeaderContainer.innerHTML = `
       <div class="relative w-44 h-44 md:w-52 md:h-52 rounded-2xl overflow-hidden bg-vault-850 shrink-0 border border-vault-700 shadow-2xl">
         <img src="${album.cover}" alt="${album.title}" class="w-full h-full object-cover">
@@ -598,10 +644,9 @@ class App {
     `;
 
     document.getElementById('album-header-artist-link')?.addEventListener('click', () => {
-      this.switchView('artist');
+      window.history.back();
     });
 
-    // Render Track Table
     this.elements.albumTracksTbody.innerHTML = tracks.map((track, idx) => {
       const isCompleted = storage.isSongCompleted(track.id);
       const playCount = storage.getSongPlayCount(track.id);
@@ -649,12 +694,9 @@ class App {
       `;
     }).join('');
 
-    // Attach Track Row Click (Play Track)
     this.elements.albumTracksTbody.querySelectorAll('.track-row').forEach(row => {
       row.addEventListener('click', (e) => {
-        // Ignore if like button was clicked
         if (e.target.closest('.btn-row-like')) return;
-
         const trackId = row.getAttribute('data-track-id');
         const track = tracks.find(t => t.id === trackId);
         if (track) {
@@ -663,7 +705,6 @@ class App {
       });
     });
 
-    // Attach Row Like Click
     this.elements.albumTracksTbody.querySelectorAll('.btn-row-like').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -699,7 +740,6 @@ class App {
     this.elements.playerCompletionPct.textContent = '0%';
     this.elements.playerProgressFill.style.width = '0%';
 
-    // Re-highlight active row if in album view
     if (this.currentView === 'album') {
       this.renderAlbumView();
     }
@@ -721,14 +761,10 @@ class App {
     this.elements.playerCompletionPct.textContent = `${percentage}%`;
   }
 
-  /**
-   * 90% Listen Rule Reached!
-   */
   handleSongCompleted(track, album) {
     this.elements.playerTrackCompletedBadge.classList.remove('hidden');
     this.showToast(`🏆 90% Completed: "${track.title}" logged in Vault!`, 'success');
 
-    // Check if album or band reached 100%
     if (album) {
       const aStats = VaultManager.getAlbumStats(album);
       if (aStats.isComplete) {
@@ -743,7 +779,6 @@ class App {
       }
     }
 
-    // Refresh views if open
     if (this.currentView === 'album') {
       this.renderAlbumView();
     } else if (this.currentView === 'artist') {
@@ -803,7 +838,7 @@ class App {
     if (results.length === 0) {
       this.elements.searchDropdown.innerHTML = `
         <div class="p-4 text-center text-xs text-neutral-400">
-          No artists found. Try switching to <b>Unfiltered YouTube</b> mode at the top right of the search bar to find small or unlisted artists!
+          No artists found. Try switching to <b>Unfiltered YouTube</b> mode at the top right of the search bar!
         </div>
       `;
       return;
@@ -829,7 +864,6 @@ class App {
     this.elements.searchDropdown.querySelectorAll('.search-result-item').forEach(item => {
       item.addEventListener('click', async () => {
         const artistName = decodeURIComponent(item.getAttribute('data-name'));
-        const artistId = item.getAttribute('data-id');
         const artistObj = results.find(r => r.name === artistName);
 
         this.elements.searchDropdown.classList.add('hidden');
@@ -851,7 +885,7 @@ class App {
     this.elements.modalArtistBio.classList.remove('hidden');
     this.elements.modalArtistBio.classList.add('flex');
     this.elements.bioModalTitle.textContent = `${this.selectedBand.name} — Credits & Bio`;
-    this.elements.bioModalExtract.textContent = 'Loading Wikipedia artist overview...';
+    this.elements.bioModalExtract.textContent = 'Loading Wikipedia overview...';
     this.elements.bioModalMembers.innerHTML = `<span class="text-xs text-neutral-500">Loading members...</span>`;
 
     const bio = await MusicAPI.getArtistBio(this.selectedBand.name);
@@ -873,33 +907,7 @@ class App {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ================= 7. FIREBASE CLOUD SYNC =================
-  async initFirebaseSync(config) {
-    const fb = await storage.initFirebase(config);
-    if (fb) {
-      fb.onAuthStateChanged(user => {
-        if (user) {
-          this.elements.userAccountLabel.textContent = user.displayName || user.email || 'Connected';
-          this.showToast(`Signed in as ${user.displayName || user.email}`, 'success');
-          this.renderVault();
-        } else {
-          this.elements.userAccountLabel.textContent = 'Sign In';
-        }
-      });
-
-      this.elements.btnUserAccount.onclick = () => {
-        if (storage.currentUser) {
-          if (confirm('Sign out of Google Account?')) {
-            fb.signOut();
-          }
-        } else {
-          fb.signIn();
-        }
-      };
-    }
-  }
-
-  // ================= 8. TOAST NOTIFICATIONS =================
+  // ================= 7. TOAST NOTIFICATIONS =================
   showToast(message, type = 'info') {
     const toast = document.createElement('div');
     let border = 'border-vault-700';
@@ -940,7 +948,6 @@ class App {
   }
 }
 
-// Start Application on DOM Load
 window.addEventListener('DOMContentLoaded', () => {
   window.app = new App();
 });

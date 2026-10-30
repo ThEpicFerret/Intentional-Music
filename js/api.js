@@ -1,8 +1,8 @@
 /**
  * Intentional Music — API & Music Data Provider
  * Handles:
- *  - Curated discography lookup (iTunes Search API, deduplication of compilations/remasters)
- *  - Unfiltered YouTube search for niche/indie artists
+ *  - Full curated discography lookups (All studio albums, iconic live releases)
+ *  - Unfiltered YouTube search for underground artists
  *  - Wikipedia API for clean bio summaries and band members
  */
 
@@ -14,22 +14,31 @@ export class MusicAPI {
     if (!query || query.trim().length < 2) return [];
 
     try {
-      // 1. Search for artist albums
-      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=album&limit=40`;
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=musicArtist&limit=25`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
 
-      if (!data.results || data.results.length === 0) {
-        return [];
+      if (data.results && data.results.length > 0) {
+        return data.results.map(item => ({
+          id: `artist_${item.artistId}`,
+          name: item.artistName,
+          genre: item.primaryGenreName || 'Music',
+          image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600',
+          albumCount: 10
+        }));
       }
 
-      // Group by artist
-      const artistsMap = new Map();
+      // Fallback: search by album entity
+      const albumUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=album&limit=40`;
+      const aRes = await fetch(albumUrl);
+      const aData = await aRes.json();
+      if (!aData.results || aData.results.length === 0) return [];
 
-      for (const item of data.results) {
+      const artistsMap = new Map();
+      for (const item of aData.results) {
         const artistName = item.artistName;
-        const artistId = item.artistId || item.collectionArtistId || artistName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const artistId = item.artistId || artistName.toLowerCase().replace(/[^a-z0-9]/g, '');
 
         if (!artistsMap.has(artistId)) {
           artistsMap.set(artistId, {
@@ -37,15 +46,8 @@ export class MusicAPI {
             name: artistName,
             genre: item.primaryGenreName || 'Music',
             image: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : '',
-            albumCount: 1,
-            sampleAlbums: [item]
+            albumCount: 1
           });
-        } else {
-          const entry = artistsMap.get(artistId);
-          entry.albumCount += 1;
-          if (entry.sampleAlbums.length < 3) {
-            entry.sampleAlbums.push(item);
-          }
         }
       }
 
@@ -58,30 +60,36 @@ export class MusicAPI {
 
   /**
    * Fetch full official discography for an artist with intelligent deduplication
-   * Filters out duplicate re-releases and keeps unique studio & major live albums
+   * Retrieves ALL original studio albums and notable live releases
    */
   static async getArtistDiscography(artistName, artistId = null) {
     try {
       let url = '';
       if (artistId && artistId.startsWith('artist_') && !isNaN(artistId.replace('artist_', ''))) {
         const rawId = artistId.replace('artist_', '');
-        url = `https://itunes.apple.com/lookup?id=${rawId}&entity=album&limit=100`;
+        url = `https://itunes.apple.com/lookup?id=${rawId}&entity=album&limit=200`;
       } else {
-        url = `https://itunes.apple.com/search?term=${encodeURIComponent(artistName)}&entity=album&limit=100`;
+        url = `https://itunes.apple.com/search?term=${encodeURIComponent(artistName)}&entity=album&limit=200`;
       }
 
       const res = await fetch(url);
       const data = await res.json();
       if (!data.results || data.results.length === 0) return [];
 
-      // Filter to relevant albums
-      const rawAlbums = data.results.filter(r => r.wrapperType === 'collection' || r.collectionType === 'Album');
+      // Filter to albums strictly by or featuring the artist
+      const lowerName = artistName.toLowerCase();
+      const rawAlbums = data.results.filter(r => {
+        if (r.wrapperType !== 'collection' && r.collectionType !== 'Album') return false;
+        if (!r.artistName) return false;
+        const rName = r.artistName.toLowerCase();
+        return rName.includes(lowerName) || lowerName.includes(rName);
+      });
 
-      // Intelligent de-duplication:
-      // Remove spam compilations like "Top 50 Best Hits", "100 Greatest Songs", "Relaxing Piano Versions", etc.
+      // Filter out spam compilations while preserving legitimate studio & live albums
       const spamKeywords = [
         'greatest hits', 'the best of', 'top 50', 'top 100', 'karaoke', 
-        'tribute to', 'box set', 'the complete collection', 'ultimate collection'
+        'tribute to', 'box set', 'the complete collection', 'ultimate collection',
+        'relaxing piano', 'lullaby', 'acoustic tribute'
       ];
 
       const cleanAlbums = [];
@@ -90,11 +98,11 @@ export class MusicAPI {
       for (const alb of rawAlbums) {
         const titleLower = alb.collectionName.toLowerCase();
         
-        // Skip obvious generic compilation churn unless it's a known original studio release
+        // Skip obvious generic compilation churn unless it's a known live album (like Live in the LBC)
         const isSpam = spamKeywords.some(keyword => titleLower.includes(keyword) && !titleLower.includes('live'));
         if (isSpam) continue;
 
-        // Normalize title: remove "(Remastered 2011)", "(Deluxe Edition)", etc., to avoid 10 copies of the same album
+        // Normalize title: strip remaster tags to avoid 10 duplicates of the same album
         const normalizedTitle = titleLower
           .replace(/\(remastered.*?\)/gi, '')
           .replace(/\[remastered.*?\]/gi, '')
@@ -105,7 +113,7 @@ export class MusicAPI {
           .trim();
 
         if (seenTitles.has(normalizedTitle)) {
-          continue; // Already have a copy of this album
+          continue;
         }
 
         seenTitles.add(normalizedTitle);
@@ -122,7 +130,7 @@ export class MusicAPI {
         });
       }
 
-      // Sort chronologically (oldest to newest) to appreciate the band's musical era!
+      // Sort chronologically (oldest to newest) to appreciate the band's musical evolution
       cleanAlbums.sort((a, b) => {
         const yA = parseInt(a.releaseYear, 10) || 0;
         const yB = parseInt(b.releaseYear, 10) || 0;
@@ -147,7 +155,7 @@ export class MusicAPI {
 
       if (!data.results || data.results.length === 0) return [];
 
-      // First item is often the album collection itself; filter to songs
+      // Filter songs
       const songs = data.results.filter(r => r.wrapperType === 'track' && r.kind === 'song');
 
       // Sort by discNumber then trackNumber
@@ -164,8 +172,6 @@ export class MusicAPI {
         album: albumTitle,
         durationMs: s.trackTimeMillis || 0,
         formattedDuration: MusicAPI.formatDuration(s.trackTimeMillis),
-        previewUrl: s.previewUrl,
-        // Query to match on YouTube
         youtubeSearchQuery: `${s.artistName} - ${s.trackName} (Official Audio)`
       }));
     } catch (err) {
@@ -176,10 +182,8 @@ export class MusicAPI {
 
   /**
    * Unfiltered YouTube Search mode
-   * Allows searching for niche artists, independent musicians, or custom tracks
    */
   static async searchUnfilteredYouTube(query) {
-    // Generate an immediate custom entry for the user so they can add any underground/niche artist
     const trimmed = query.trim();
     if (!trimmed) return [];
 
@@ -195,7 +199,7 @@ export class MusicAPI {
           {
             id: `alb_custom_${Date.now()}`,
             rawCollectionId: `custom_${Date.now()}`,
-            title: `${trimmed} — Self-Titled / Releases`,
+            title: `${trimmed} — Releases`,
             artist: trimmed,
             releaseYear: new Date().getFullYear(),
             trackCount: 5,
@@ -220,11 +224,10 @@ export class MusicAPI {
   }
 
   /**
-   * Fetch Band Bio & Members from Wikipedia without walls of text
+   * Fetch Band Bio & Members from Wikipedia
    */
   static async getArtistBio(artistName) {
     try {
-      // 1. Wikipedia summary endpoint
       const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artistName)}`;
       const res = await fetch(summaryUrl);
       
@@ -237,38 +240,34 @@ export class MusicAPI {
         if (data.content_urls && data.content_urls.desktop) {
           wikiUrl = data.content_urls.desktop.page;
         }
-      } else {
-        // Fallback search
-        extract = `${artistName} is a celebrated musical artist featured in your Intentional Music Vault.`;
       }
 
-      // 2. Synthesize concise key members/credits for major bands
       const commonBandMembers = {
         'pink floyd': ['David Gilmour (Guitar, Vocals)', 'Roger Waters (Bass, Vocals)', 'Richard Wright (Keyboards)', 'Nick Mason (Drums)', 'Syd Barrett (Guitar)'],
         'avenged sevenfold': ['M. Shadows (Lead Vocals)', 'Synyster Gates (Lead Guitar)', 'Zacky Vengeance (Rhythm Guitar)', 'Johnny Christ (Bass)', 'Brooks Wackerman (Drums)', 'The Rev (Drums, Vocals)'],
         'daft punk': ['Thomas Bangalter (Synthesizers, Production)', 'Guy-Manuel de Homem-Christo (Synthesizers, Production)'],
         'radiohead': ['Thom Yorke (Lead Vocals, Guitar)', 'Jonny Greenwood (Lead Guitar, Keys)', 'Colin Greenwood (Bass)', 'Ed O\'Brien (Guitar)', 'Philip Selway (Drums)'],
-        'kendrick lamar': ['Kendrick Lamar (Lead Vocals, Lyrics)', 'Sounwave (Producer)', 'Dr. Dre (Executive Producer)', 'Boi-1da (Producer)'],
+        'metallica': ['James Hetfield (Lead Vocals, Rhythm Guitar)', 'Kirk Hammett (Lead Guitar)', 'Robert Trujillo (Bass)', 'Lars Ulrich (Drums)', 'Cliff Burton (Bass)'],
         'led zeppelin': ['Robert Plant (Lead Vocals, Harmonica)', 'Jimmy Page (Guitar)', 'John Paul Jones (Bass, Keys)', 'John Bonham (Drums)'],
         'queen': ['Freddie Mercury (Lead Vocals, Piano)', 'Brian May (Guitar, Vocals)', 'John Deacon (Bass)', 'Roger Taylor (Drums, Vocals)'],
         'the beatles': ['John Lennon (Vocals, Rhythm Guitar)', 'Paul McCartney (Vocals, Bass)', 'George Harrison (Lead Guitar, Vocals)', 'Ringo Starr (Drums, Vocals)'],
-        'nirvana': ['Kurt Cobain (Lead Vocals, Guitar)', 'Krist Novoselic (Bass)', 'Dave Grohl (Drums, Vocals)']
+        'nirvana': ['Kurt Cobain (Lead Vocals, Guitar)', 'Krist Novoselic (Bass)', 'Dave Grohl (Drums, Vocals)'],
+        'arctic monkeys': ['Alex Turner (Lead Vocals, Guitar)', 'Jamie Cook (Guitar)', 'Nick O\'Malley (Bass)', 'Matt Helders (Drums)']
       };
 
       const key = artistName.toLowerCase().trim();
       const members = commonBandMembers[key] || [
-        `${artistName} (Lead Artist & Composer)`,
-        'Studio Musicians & Sound Engineers'
+        `${artistName} (Lead Artist & Performer)`,
+        'Studio Band & Production Team'
       ];
 
       return {
         name: artistName,
-        extract: extract || 'No biographical extract available.',
+        extract: extract || `${artistName} is part of your intentional discography collection.`,
         members,
         wikiUrl
       };
     } catch (e) {
-      console.warn('Bio fetch error:', e);
       return {
         name: artistName,
         extract: `${artistName} is part of your intentional discography collection.`,
