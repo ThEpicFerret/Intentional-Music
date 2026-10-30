@@ -1,15 +1,15 @@
 /**
  * Intentional Music — API & Music Data Provider
- * Supports:
- *  - Unified search across Songs, Albums, and Artists (triggered by typing or pressing Enter)
- *  - Direct playable audio streams (previewUrl) for 100% reliable sound
- *  - Wikipedia bio and band members lookup
+ * Features:
+ *  - Unified search across Songs, Albums, and Artists
+ *  - Full-length audio stream resolver (bypasses 30-second preview limit)
+ *  - Instant Lyrics API (LRCLIB & Lyrics.ovh)
+ *  - Wikipedia bio & band members
  */
 
 export class MusicAPI {
   /**
    * Unified Search across Songs, Albums, and Artists
-   * Triggered when searching or pressing Enter
    */
   static async searchUnified(query) {
     if (!query || query.trim().length < 2) {
@@ -31,7 +31,6 @@ export class MusicAPI {
       const artistsMap = new Map();
 
       for (const item of data.results) {
-        // 1. Songs
         if (item.wrapperType === 'track' && item.kind === 'song') {
           songs.push({
             id: `trk_${item.trackId}`,
@@ -49,7 +48,6 @@ export class MusicAPI {
           });
         }
 
-        // 2. Albums
         if (item.wrapperType === 'collection' || item.collectionType === 'Album') {
           if (!albums.some(a => a.id === `alb_${item.collectionId}`)) {
             albums.push({
@@ -65,7 +63,6 @@ export class MusicAPI {
           }
         }
 
-        // 3. Artists
         const artistName = item.artistName;
         if (artistName && !artistsMap.has(artistName.toLowerCase())) {
           artistsMap.set(artistName.toLowerCase(), {
@@ -87,6 +84,94 @@ export class MusicAPI {
       console.error('Unified search error:', err);
       return { songs: [], albums: [], artists: [] };
     }
+  }
+
+  /**
+   * Fetch full-length song audio stream (Full Song, not 30s preview)
+   */
+  static async getFullSongAudioStream(artist, title) {
+    const query = `${artist} - ${title} official audio`;
+    const instances = [
+      'https://pipedapi.kavin.rocks',
+      'https://inv.tux.pizza',
+      'https://invidious.nerdvpn.de',
+      'https://vid.puffyan.us'
+    ];
+
+    // Try finding YouTube video ID and direct full stream
+    for (const inst of instances) {
+      try {
+        const searchUrl = `${inst}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+
+        const res = await fetch(searchUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          const items = await res.json();
+          if (Array.isArray(items) && items.length > 0 && items[0].videoId) {
+            const vId = items[0].videoId;
+            // Fetch video stream info
+            const streamUrl = `${inst}/api/v1/videos/${vId}`;
+            const sRes = await fetch(streamUrl);
+            if (sRes.ok) {
+              const videoData = await sRes.json();
+              // Extract highest quality audio stream
+              const audioFormats = videoData.adaptiveFormats?.filter(f => f.type?.startsWith('audio/')) || [];
+              if (audioFormats.length > 0) {
+                return audioFormats[0].url;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /**
+   * Fetch Real Song Lyrics from LRCLIB & Lyrics.ovh
+   */
+  static async getLyrics(artist, title) {
+    if (!artist || !title) return 'No lyrics available.';
+
+    // Clean title (remove "Remastered", "Live in...", etc.)
+    const cleanTitle = title
+      .replace(/\(.*?\)/g, '')
+      .replace(/\[.*?\]/g, '')
+      .replace(/- Live.*/gi, '')
+      .replace(/feat\..*/gi, '')
+      .trim();
+
+    // 1. Try LRCLIB (Clean, fast open database)
+    try {
+      const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(cleanTitle)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.plainLyrics) {
+          return data.plainLyrics;
+        } else if (data.syncedLyrics) {
+          // Strip timestamp tags for clean reading
+          return data.syncedLyrics.replace(/\[\d{2}:\d{2}\.\d{2}\]/g, '').trim();
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try Lyrics.ovh
+    try {
+      const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(cleanTitle)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.lyrics && data.lyrics.trim().length > 10) {
+          return data.lyrics.trim();
+        }
+      }
+    } catch (_) {}
+
+    return `Lyrics for "${title}" by ${artist} are being indexed.\n\nYou can also open the track directly in YouTube Music using the link in the player bar to see synchronized lyrics!`;
   }
 
   /**
@@ -166,7 +251,7 @@ export class MusicAPI {
   }
 
   /**
-   * Fetch tracks for a specific album in canonical track order with direct playable audio stream
+   * Fetch tracks for a specific album in canonical track order
    */
   static async getAlbumTracks(rawCollectionId, albumTitle, artistName) {
     try {
@@ -192,7 +277,7 @@ export class MusicAPI {
         durationMs: s.trackTimeMillis || 0,
         formattedDuration: MusicAPI.formatDuration(s.trackTimeMillis),
         cover: s.artworkUrl100 ? s.artworkUrl100.replace('100x100bb', '600x600bb') : '',
-        previewUrl: s.previewUrl || '', // Direct pristine audio stream
+        previewUrl: s.previewUrl || '',
         youtubeSearchQuery: `${s.artistName} - ${s.trackName} (Official Audio)`
       }));
     } catch (err) {

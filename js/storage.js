@@ -1,12 +1,13 @@
 /**
- * Intentional Music — Storage & Cloud Sync Manager
+ * Intentional Music — Storage & Preferences Manager
  * Supports:
- *  1. Local-first storage via browser LocalStorage (100% private)
- *  2. Separate favorites for Songs, Albums, and Bands
- *  3. Google / YouTube account profile storage
+ *  - Local-first storage (100% private)
+ *  - Separate favorites for Songs, Albums, and Bands
+ *  - Hidden/Removed bands list
+ *  - Google/YouTube account profile
  */
 
-const STORAGE_KEY = 'intentional_music_vault_v2';
+const STORAGE_KEY = 'intentional_music_vault_v3';
 
 class StorageManager {
   constructor() {
@@ -21,10 +22,11 @@ class StorageManager {
         const parsed = JSON.parse(raw);
         return {
           customBands: parsed.customBands || [],
+          hiddenBands: parsed.hiddenBands || {}, // bandId -> true
           trackProgress: parsed.trackProgress || {},
-          favoriteSongs: parsed.favoriteSongs || {}, // trackId -> track object
-          favoriteAlbums: parsed.favoriteAlbums || {}, // albumId -> album object
-          favoriteBands: parsed.favoriteBands || {}, // bandId -> band object
+          favoriteSongs: parsed.favoriteSongs || {},
+          favoriteAlbums: parsed.favoriteAlbums || {},
+          favoriteBands: parsed.favoriteBands || {},
           userProfile: parsed.userProfile || null
         };
       }
@@ -33,7 +35,8 @@ class StorageManager {
     }
     return {
       customBands: [],
-      trackProgress: {}, // trackId: { completed: bool, playCount: number, duration: number, lastPlayed: number }
+      hiddenBands: {},
+      trackProgress: {},
       favoriteSongs: {},
       favoriteAlbums: {},
       favoriteBands: {},
@@ -49,7 +52,7 @@ class StorageManager {
     }
   }
 
-  // --- Track Completion & 90% Rule Storage ---
+  // --- Track Completion & 90% Rule ---
   isSongCompleted(trackId) {
     return !!(this.data.trackProgress[trackId]?.completed);
   }
@@ -76,6 +79,23 @@ class StorageManager {
       this.data.trackProgress[trackId].playCount = (this.data.trackProgress[trackId].playCount || 0) + 1;
       this.data.trackProgress[trackId].lastPlayed = Date.now();
     }
+    this.saveLocal();
+  }
+
+  // --- REMOVE / HIDE BANDS FROM FRONT SCREEN ---
+  hideBand(bandId) {
+    this.data.hiddenBands[bandId] = true;
+    // Also remove from custom bands if present
+    this.data.customBands = (this.data.customBands || []).filter(b => b.id !== bandId);
+    this.saveLocal();
+  }
+
+  isBandHidden(bandId) {
+    return !!this.data.hiddenBands[bandId];
+  }
+
+  unhideAllBands() {
+    this.data.hiddenBands = {};
     this.saveLocal();
   }
 
@@ -143,7 +163,7 @@ class StorageManager {
     return Object.values(this.data.favoriteAlbums || {});
   }
 
-  // --- 3. FAVORITE BANDS ---
+  // --- 3. FAVORITE BANDS (MY COLLECTION) ---
   isFavoriteBand(bandId) {
     return !!this.data.favoriteBands[bandId];
   }
@@ -160,8 +180,13 @@ class StorageManager {
         name: band.name,
         genre: band.genre || 'Music',
         image: band.image,
+        bioSummary: band.bioSummary || '',
         addedAt: Date.now()
       };
+      // If was hidden, unhide it
+      if (this.data.hiddenBands[band.id]) {
+        delete this.data.hiddenBands[band.id];
+      }
       this.saveLocal();
       return true;
     }
@@ -187,7 +212,7 @@ class StorageManager {
     return false;
   }
 
-  // --- GOOGLE / YOUTUBE ACCOUNT USER PROFILE ---
+  // --- GOOGLE / YOUTUBE ACCOUNT PROFILE ---
   setUserProfile(profile) {
     this.data.userProfile = profile;
     this.currentUser = profile;

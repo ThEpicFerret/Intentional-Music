@@ -1,11 +1,11 @@
 /**
  * Intentional Music — Main Application Controller
- * Handles:
- *  - 100% Infallible Instant Audio Playback & 90% Listen Rule
- *  - Unified Search (Songs, Albums, Bands) with Enter key execution
- *  - Dedicated Favorites System (Separate for Songs, Albums, and Bands)
- *  - Google / YouTube Account Connect & direct YouTube Music shortcuts
- *  - Native Browser Back/Forward navigation & history
+ * Supports:
+ *  - Opens on "My Collection" by default + "Explore Vault" mode
+ *  - Ability to remove bands from front screen with ✕
+ *  - Play button changes to Stop/Pause when listening
+ *  - Dedicated Lyrics Drawer / Modal
+ *  - Full search with Enter key & Favorites
  */
 
 import { storage } from './storage.js';
@@ -16,13 +16,14 @@ import { DisguisedPlayer } from './player.js';
 class App {
   constructor() {
     this.currentView = 'vault'; // 'vault' | 'artist' | 'album' | 'search' | 'favorites'
+    this.vaultMode = 'collection'; // 'collection' (default) | 'explore'
     this.selectedBand = null;
     this.selectedAlbum = null;
     this.activeGenre = 'all';
     this.activeCompletionFilter = 'all';
-    this.activeFavTab = 'songs'; // 'songs' | 'albums' | 'bands'
+    this.activeFavTab = 'songs';
 
-    // Initialize Audio Engine
+    // Audio Engine
     this.player = new DisguisedPlayer({
       onTrackChange: (track, album) => this.handleTrackChange(track, album),
       onSongCompleted: (track, album) => this.handleSongCompleted(track, album),
@@ -46,6 +47,8 @@ class App {
       navBrand: document.getElementById('nav-brand'),
       navHistoryBack: document.getElementById('nav-history-back'),
       navHistoryForward: document.getElementById('nav-history-forward'),
+      navBtnCollection: document.getElementById('nav-btn-collection'),
+      navBtnExplore: document.getElementById('nav-btn-explore'),
       navBtnFavorites: document.getElementById('nav-btn-favorites'),
       navFavBadge: document.getElementById('nav-fav-badge'),
 
@@ -55,6 +58,17 @@ class App {
       viewFavorites: document.getElementById('view-favorites'),
       viewArtist: document.getElementById('view-artist'),
       viewAlbum: document.getElementById('view-album'),
+
+      // Vault View Header & Elements
+      vaultSectionTitle: document.getElementById('vault-section-title'),
+      vaultSectionSubtitle: document.getElementById('vault-section-subtitle'),
+      btnUnhideBands: document.getElementById('btn-unhide-bands'),
+      bandsGrid: document.getElementById('bands-grid'),
+      vaultEmptyState: document.getElementById('vault-empty-state'),
+      emptyStateTitle: document.getElementById('empty-state-title'),
+      emptyStateDesc: document.getElementById('empty-state-desc'),
+      btnEmptyGotoExplore: document.getElementById('btn-empty-goto-explore'),
+      completionFilter: document.getElementById('completion-filter'),
 
       // Search
       searchForm: document.getElementById('global-search-form'),
@@ -66,7 +80,7 @@ class App {
       searchArtistsGrid: document.getElementById('search-artists-grid'),
       btnSearchBackVault: document.getElementById('btn-search-back-vault'),
 
-      // Favorites View Elements
+      // Favorites View
       btnFavBackVault: document.getElementById('btn-fav-back-vault'),
       tabFavSongs: document.getElementById('tab-fav-songs'),
       tabFavAlbums: document.getElementById('tab-fav-albums'),
@@ -80,15 +94,6 @@ class App {
       favSongsContainer: document.getElementById('fav-songs-container'),
       favAlbumsContainer: document.getElementById('fav-albums-container'),
       favBandsContainer: document.getElementById('fav-bands-container'),
-
-      // Vault Grid
-      bandsGrid: document.getElementById('bands-grid'),
-      vaultEmptyState: document.getElementById('vault-empty-state'),
-      statTotalBands: document.getElementById('stat-total-bands'),
-      statSongsCompleted: document.getElementById('stat-songs-completed'),
-      statGoldMastered: document.getElementById('stat-gold-mastered'),
-      headerVaultRate: document.getElementById('header-vault-rate'),
-      completionFilter: document.getElementById('completion-filter'),
 
       // Artist View
       artistHeroCard: document.getElementById('artist-hero-card'),
@@ -126,9 +131,16 @@ class App {
       playerVolumeSlider: document.getElementById('player-volume-slider'),
       btnPlayerMute: document.getElementById('btn-player-mute'),
       btnPlayerLike: document.getElementById('btn-player-like'),
+      btnPlayerLyrics: document.getElementById('btn-player-lyrics'),
       btnPlayerYtm: document.getElementById('btn-player-ytm'),
 
       // Modals
+      modalLyrics: document.getElementById('modal-lyrics'),
+      lyricsModalTitle: document.getElementById('lyrics-modal-title'),
+      lyricsModalArtist: document.getElementById('lyrics-modal-artist'),
+      lyricsContentText: document.getElementById('lyrics-content-text'),
+      btnCloseLyrics: document.getElementById('btn-close-lyrics'),
+
       modalGoogleLogin: document.getElementById('modal-google-login'),
       btnGoogleLogin: document.getElementById('btn-google-login'),
       googleLoginLabel: document.getElementById('google-login-label'),
@@ -145,21 +157,23 @@ class App {
       modalSettings: document.getElementById('modal-settings'),
       btnSettings: document.getElementById('btn-settings'),
       btnCloseSettings: document.getElementById('btn-close-settings'),
+      btnRestoreAllBands: document.getElementById('btn-restore-all-bands'),
       btnResetStorage: document.getElementById('btn-reset-storage'),
 
       toastContainer: document.getElementById('toast-container')
     };
   }
 
-  // ================= BROWSER HISTORY & NAVIGATION =================
+  // ================= NAVIGATION & ROUTING =================
   initHistory() {
-    history.replaceState({ view: 'vault' }, '', window.location.pathname + '#/vault');
+    history.replaceState({ view: 'vault', vaultMode: 'collection' }, '', window.location.pathname + '#/collection');
 
     window.addEventListener('popstate', (e) => {
       if (e.state && e.state.view) {
+        if (e.state.vaultMode) this.vaultMode = e.state.vaultMode;
         this.navigateTo(e.state.view, e.state, false);
       } else {
-        this.navigateTo('vault', {}, false);
+        this.navigateTo('vault', { vaultMode: 'collection' }, false);
       }
     });
 
@@ -183,11 +197,14 @@ class App {
     this.elements.viewAlbum.classList.add('hidden');
 
     if (view === 'vault') {
+      if (state.vaultMode) this.vaultMode = state.vaultMode;
       this.selectedBand = null;
       this.selectedAlbum = null;
       this.elements.viewVault.classList.remove('hidden');
       this.renderVault();
-      if (pushHistory) history.pushState({ view: 'vault' }, '', window.location.pathname + '#/vault');
+      if (pushHistory) {
+        history.pushState({ view: 'vault', vaultMode: this.vaultMode }, '', window.location.pathname + `#/${this.vaultMode}`);
+      }
     } else if (view === 'search') {
       this.elements.viewSearch.classList.remove('hidden');
       if (pushHistory) history.pushState({ view: 'search' }, '', window.location.pathname + '#/search');
@@ -220,23 +237,40 @@ class App {
   }
 
   bindEvents() {
-    // Navigation Brand
-    this.elements.navBrand.addEventListener('click', () => this.navigateTo('vault'));
+    this.elements.navBrand.addEventListener('click', () => {
+      this.vaultMode = 'collection';
+      this.navigateTo('vault', { vaultMode: 'collection' });
+    });
 
-    // Top Navigation Back & Forward
     this.elements.navHistoryBack.addEventListener('click', () => window.history.back());
     this.elements.navHistoryForward.addEventListener('click', () => window.history.forward());
 
-    // Favorites Nav Link
+    // Top Mode Switchers: My Collection vs Explore Vault
+    this.elements.navBtnCollection.addEventListener('click', () => {
+      this.vaultMode = 'collection';
+      this.updateVaultHeaderMode();
+      this.navigateTo('vault', { vaultMode: 'collection' });
+    });
+
+    this.elements.navBtnExplore.addEventListener('click', () => {
+      this.vaultMode = 'explore';
+      this.updateVaultHeaderMode();
+      this.navigateTo('vault', { vaultMode: 'explore' });
+    });
+
+    this.elements.btnEmptyGotoExplore.addEventListener('click', () => {
+      this.vaultMode = 'explore';
+      this.updateVaultHeaderMode();
+      this.renderVault();
+    });
+
     this.elements.navBtnFavorites.addEventListener('click', () => this.navigateTo('favorites'));
     this.elements.btnFavBackVault.addEventListener('click', () => this.navigateTo('vault'));
     this.elements.btnSearchBackVault.addEventListener('click', () => this.navigateTo('vault'));
-
-    // In-page Back Buttons
     this.elements.btnBackToVault.addEventListener('click', () => window.history.back());
     this.elements.btnBackToArtist.addEventListener('click', () => window.history.back());
 
-    // ================= UNIFIED SEARCH (PRESS ENTER TO SEARCH SONGS/ALBUMS/BANDS) =================
+    // Search with Enter Key Execution
     this.elements.searchForm.addEventListener('submit', (e) => {
       e.preventDefault();
       this.executeFullSearch();
@@ -259,46 +293,47 @@ class App {
     this.elements.tabFavAlbums.addEventListener('click', () => this.switchFavTab('albums'));
     this.elements.tabFavBands.addEventListener('click', () => this.switchFavTab('bands'));
 
-    // Genre filter pills
-    document.querySelectorAll('.genre-pill').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.genre-pill').forEach(p => {
-          p.classList.remove('bg-red-600', 'text-white', 'shadow-md', 'shadow-red-900/30');
-          p.classList.add('bg-vault-850', 'text-neutral-300');
-        });
-        btn.classList.add('bg-red-600', 'text-white', 'shadow-md', 'shadow-red-900/30');
-        btn.classList.remove('bg-vault-850', 'text-neutral-300');
-
-        this.activeGenre = btn.getAttribute('data-genre');
-        this.renderVault();
-      });
-    });
-
     this.elements.completionFilter.addEventListener('change', (e) => {
       this.activeCompletionFilter = e.target.value;
       this.renderVault();
     });
 
-    // Artist Info & Bio Modal
+    // Restore removed bands
+    this.elements.btnUnhideBands.addEventListener('click', () => {
+      storage.unhideAllBands();
+      this.renderVault();
+      this.showToast('Restored all previously removed bands', 'success');
+    });
+    this.elements.btnRestoreAllBands.addEventListener('click', () => {
+      storage.unhideAllBands();
+      this.renderVault();
+      this.elements.modalSettings.classList.add('hidden');
+      this.showToast('Restored all removed bands to your vault', 'success');
+    });
+
+    // Artist Bio Modal
     this.elements.btnArtistInfo.addEventListener('click', () => this.openArtistBioModal());
     this.elements.btnCloseBioModal.addEventListener('click', () => {
       this.elements.modalArtistBio.classList.add('hidden');
       this.elements.modalArtistBio.classList.remove('flex');
     });
 
-    // Google / YouTube Sign In Modal
+    // Lyrics Modal
+    this.elements.btnPlayerLyrics.addEventListener('click', () => this.openLyricsModal());
+    this.elements.btnCloseLyrics.addEventListener('click', () => {
+      this.elements.modalLyrics.classList.add('hidden');
+      this.elements.modalLyrics.classList.remove('flex');
+    });
+
+    // YouTube Player Minimize Button
+    document.getElementById('btn-minimize-yt')?.addEventListener('click', () => {
+      document.getElementById('youtube-player-container')?.classList.add('hidden');
+    });
+
+    // YouTube Login Modal
     this.elements.btnGoogleLogin.addEventListener('click', () => {
-      const profile = storage.getUserProfile();
-      if (profile) {
-        if (confirm(`Signed in as ${profile.name} (${profile.email}). Do you want to sign out?`)) {
-          storage.clearUserProfile();
-          this.checkUserProfile();
-          this.showToast('Signed out of YouTube account', 'info');
-        }
-      } else {
-        this.elements.modalGoogleLogin.classList.remove('hidden');
-        this.elements.modalGoogleLogin.classList.add('flex');
-      }
+      this.elements.modalGoogleLogin.classList.remove('hidden');
+      this.elements.modalGoogleLogin.classList.add('flex');
     });
 
     this.elements.btnCloseGoogleModal.addEventListener('click', () => {
@@ -307,21 +342,13 @@ class App {
     });
 
     this.elements.btnExecuteGoogleLogin.addEventListener('click', () => {
-      // Simulate/Trigger Google Sign-In prompt
-      const email = prompt('Enter your Google / YouTube Account Email to connect:', 'user@gmail.com');
-      if (email && email.includes('@')) {
-        const name = email.split('@')[0];
-        const profile = {
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          email,
-          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`
-        };
-        storage.setUserProfile(profile);
-        this.checkUserProfile();
-        this.elements.modalGoogleLogin.classList.add('hidden');
-        this.elements.modalGoogleLogin.classList.remove('flex');
-        this.showToast(`Connected YouTube Account: ${profile.name}!`, 'success');
-      }
+      // Direct YouTube Music Session Link
+      window.open('https://music.youtube.com', '_blank');
+      storage.setUserProfile({ name: 'Connected', email: 'YouTube Session Active' });
+      this.checkUserProfile();
+      this.elements.modalGoogleLogin.classList.add('hidden');
+      this.elements.modalGoogleLogin.classList.remove('flex');
+      this.showToast('Opened YouTube Music account session in browser!', 'success');
     });
 
     // Settings Modal
@@ -343,16 +370,15 @@ class App {
       }
     });
 
-    // Favorite Band Toggle (in Artist View)
+    // Favorite Band / Album Buttons
     this.elements.btnFavBandToggle.addEventListener('click', () => {
       if (!this.selectedBand) return;
       const isFav = storage.toggleFavoriteBand(this.selectedBand);
       this.updateFavBandButtonUI(isFav);
       this.updateFavoritesBadges();
-      this.showToast(isFav ? `Added ${this.selectedBand.name} to Favorite Bands` : `Removed ${this.selectedBand.name} from Favorites`, 'info');
+      this.showToast(isFav ? `Added ${this.selectedBand.name} to My Collection` : `Removed ${this.selectedBand.name} from Favorites`, 'info');
     });
 
-    // Favorite Album Toggle (in Album View)
     this.elements.btnFavAlbumToggle.addEventListener('click', () => {
       if (!this.selectedAlbum) return;
       const isFav = storage.toggleFavoriteAlbum(this.selectedAlbum);
@@ -361,7 +387,7 @@ class App {
       this.showToast(isFav ? `Added ${this.selectedAlbum.title} to Favorite Albums` : `Removed from Favorites`, 'info');
     });
 
-    // Player Controls
+    // Playback Controls (Play / Stop Toggle)
     this.elements.btnPlayerPlayToggle.addEventListener('click', () => {
       if (!this.player.currentTrack) {
         if (this.selectedAlbum && this.selectedAlbum.tracks && this.selectedAlbum.tracks.length > 0) {
@@ -402,18 +428,37 @@ class App {
       const isFav = storage.toggleFavoriteSong(this.player.currentTrack);
       this.updatePlayerLikeIcon(isFav);
       this.updateFavoritesBadges();
-      this.showToast(isFav ? `Added "${this.player.currentTrack.title}" to Favorite Songs` : `Removed from Favorite Songs`, 'info');
+      this.showToast(isFav ? `Added "${this.player.currentTrack.title}" to Favorite Songs` : `Removed from Favorites`, 'info');
       this.updateTrackTableStatus(this.player.currentTrack.id);
     });
 
-    // Play Full Album In Order
     this.elements.btnPlayFullAlbum.addEventListener('click', () => {
       if (this.selectedAlbum && this.selectedAlbum.tracks && this.selectedAlbum.tracks.length > 0) {
-        const firstTrack = this.selectedAlbum.tracks[0];
-        this.player.playTrack(firstTrack, this.selectedAlbum, this.selectedAlbum.tracks);
+        this.player.playTrack(this.selectedAlbum.tracks[0], this.selectedAlbum, this.selectedAlbum.tracks);
         this.showToast(`Playing ${this.selectedAlbum.title} in order`, 'info');
       }
     });
+  }
+
+  updateVaultHeaderMode() {
+    if (this.vaultMode === 'collection') {
+      this.elements.navBtnCollection.classList.add('bg-red-600', 'text-white', 'shadow');
+      this.elements.navBtnCollection.classList.remove('bg-vault-850', 'text-neutral-300');
+      this.elements.navBtnExplore.classList.remove('bg-red-600', 'text-white', 'shadow');
+      this.elements.navBtnExplore.classList.add('bg-vault-850', 'text-neutral-300');
+
+      this.elements.vaultSectionTitle.innerHTML = `<i data-lucide="layers" class="w-6 h-6 text-red-500"></i> My Collection`;
+      this.elements.vaultSectionSubtitle.textContent = `Your personal favorite artists and active completion progress.`;
+    } else {
+      this.elements.navBtnExplore.classList.add('bg-red-600', 'text-white', 'shadow');
+      this.elements.navBtnExplore.classList.remove('bg-vault-850', 'text-neutral-300');
+      this.elements.navBtnCollection.classList.remove('bg-red-600', 'text-white', 'shadow');
+      this.elements.navBtnCollection.classList.add('bg-vault-850', 'text-neutral-300');
+
+      this.elements.vaultSectionTitle.innerHTML = `<i data-lucide="compass" class="w-6 h-6 text-amber-400"></i> Explore Vault`;
+      this.elements.vaultSectionSubtitle.textContent = `Universe of 30+ legendary artists across rock, metal, electronic, hip hop, and jazz.`;
+    }
+    if (window.lucide) window.lucide.createIcons();
   }
 
   checkUserProfile() {
@@ -427,23 +472,14 @@ class App {
     }
   }
 
-  // ================= 1. VAULT VIEW (STEAM LIBRARY) =================
+  // ================= 1. VAULT & MY COLLECTION VIEW =================
   renderVault() {
-    const bands = VaultManager.getAllBands();
-    const stats = VaultManager.getOverallStats();
+    this.updateVaultHeaderMode();
 
-    this.elements.statTotalBands.textContent = bands.length;
-    this.elements.statSongsCompleted.textContent = stats.totalCompleted;
-    this.elements.statGoldMastered.textContent = stats.masteredBands;
-    this.elements.headerVaultRate.textContent = `${stats.vaultRate}%`;
-
-    let filtered = bands;
-    if (this.activeGenre !== 'all') {
-      filtered = filtered.filter(b => b.genre && b.genre.toLowerCase().includes(this.activeGenre.toLowerCase()));
-    }
+    let bands = this.vaultMode === 'collection' ? VaultManager.getMyCollection() : VaultManager.getExploreBands();
 
     if (this.activeCompletionFilter !== 'all') {
-      filtered = filtered.filter(b => {
+      bands = bands.filter(b => {
         const bStats = VaultManager.getBandStats(b);
         if (this.activeCompletionFilter === 'unplayed') return bStats.status === 'locked';
         if (this.activeCompletionFilter === 'in-progress') return bStats.status === 'in-progress';
@@ -452,17 +488,26 @@ class App {
       });
     }
 
-    if (filtered.length === 0) {
+    if (bands.length === 0) {
       this.elements.bandsGrid.innerHTML = '';
       this.elements.vaultEmptyState.classList.remove('hidden');
       this.elements.vaultEmptyState.classList.add('flex');
+      if (this.vaultMode === 'collection') {
+        this.elements.emptyStateTitle.textContent = 'Your Collection is empty';
+        this.elements.emptyStateDesc.textContent = 'Click "Explore Vault" at the top to discover 30+ legendary artists, or search and star your favorites to pin them here!';
+        this.elements.btnEmptyGotoExplore.classList.remove('hidden');
+      } else {
+        this.elements.emptyStateTitle.textContent = 'No artists match your filter';
+        this.elements.emptyStateDesc.textContent = 'Try changing the status filter or restoring removed bands.';
+        this.elements.btnEmptyGotoExplore.classList.add('hidden');
+      }
       return;
     }
 
     this.elements.vaultEmptyState.classList.add('hidden');
     this.elements.vaultEmptyState.classList.remove('flex');
 
-    this.elements.bandsGrid.innerHTML = filtered.map(band => {
+    this.elements.bandsGrid.innerHTML = bands.map(band => {
       const bStats = VaultManager.getBandStats(band);
 
       let cardClass = 'band-locked';
@@ -483,7 +528,13 @@ class App {
       }
 
       return `
-        <div class="band-card ${cardClass} group cursor-pointer bg-vault-900 border ${borderStyle} rounded-2xl overflow-hidden p-3 flex flex-col justify-between" data-band-id="${band.id}">
+        <div class="band-card ${cardClass} group cursor-pointer bg-vault-900 border ${borderStyle} rounded-2xl overflow-hidden p-3 flex flex-col justify-between relative" data-band-id="${band.id}">
+          
+          <!-- Remove Band from Front Screen Button (✕) -->
+          <button class="btn-remove-band absolute top-2 left-2 z-20 w-6 h-6 rounded-full bg-black/60 hover:bg-red-600 text-neutral-400 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow" data-band-id="${band.id}" title="Remove band from front screen">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+
           <div>
             <div class="relative w-full aspect-square rounded-xl overflow-hidden mb-3 bg-vault-850 shadow-inner">
               <img src="${band.image}" alt="${band.name}" class="band-art w-full h-full object-cover">
@@ -518,20 +569,32 @@ class App {
       `;
     }).join('');
 
+    // Attach Click to Open Band
     this.elements.bandsGrid.querySelectorAll('.band-card').forEach(card => {
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-remove-band')) return;
         const bandId = card.getAttribute('data-band-id');
         const found = bands.find(b => b.id === bandId);
-        if (found) {
-          this.openArtist(found);
-        }
+        if (found) this.openArtist(found);
+      });
+    });
+
+    // Attach Remove Band from Front Screen Button
+    this.elements.bandsGrid.querySelectorAll('.btn-remove-band').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bandId = btn.getAttribute('data-band-id');
+        const band = bands.find(b => b.id === bandId);
+        storage.hideBand(bandId);
+        this.renderVault();
+        this.showToast(`Removed "${band?.name || 'Band'}" from front screen`, 'info');
       });
     });
 
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ================= 2. FULL SEARCH VIEW (SONGS, ALBUMS, BANDS) =================
+  // ================= 2. FULL SEARCH VIEW =================
   async executeFullSearch() {
     const query = this.elements.searchInput.value.trim();
     if (!query) return;
@@ -547,7 +610,7 @@ class App {
 
     const results = await MusicAPI.searchUnified(query);
 
-    // 1. Render Matching Songs
+    // 1. Songs
     if (results.songs.length === 0) {
       this.elements.searchSongsList.innerHTML = `<div class="p-6 text-center text-xs text-neutral-500">No songs found matching "${query}".</div>`;
     } else {
@@ -609,7 +672,7 @@ class App {
       });
     }
 
-    // 2. Render Matching Albums
+    // 2. Albums
     if (results.albums.length === 0) {
       this.elements.searchAlbumsGrid.innerHTML = `<div class="col-span-full p-6 text-center text-xs text-neutral-500">No albums found.</div>`;
     } else {
@@ -630,14 +693,12 @@ class App {
         card.addEventListener('click', () => {
           const albId = card.getAttribute('data-id');
           const found = results.albums.find(a => a.id === albId);
-          if (found) {
-            this.openAlbum(found);
-          }
+          if (found) this.openAlbum(found);
         });
       });
     }
 
-    // 3. Render Matching Artists
+    // 3. Artists
     if (results.artists.length === 0) {
       this.elements.searchArtistsGrid.innerHTML = `<div class="col-span-full p-6 text-center text-xs text-neutral-500">No artists found.</div>`;
     } else {
@@ -686,7 +747,6 @@ class App {
     const results = await MusicAPI.searchUnified(query);
 
     let html = '';
-    // Show top 3 songs
     if (results.songs.length > 0) {
       html += `<div class="p-2 text-[10px] uppercase font-bold text-neutral-400 bg-vault-950/60">Songs</div>`;
       for (const s of results.songs.slice(0, 3)) {
@@ -705,7 +765,6 @@ class App {
       }
     }
 
-    // Show top 2 artists
     if (results.artists.length > 0) {
       html += `<div class="p-2 text-[10px] uppercase font-bold text-neutral-400 bg-vault-950/60">Artists</div>`;
       for (const a of results.artists.slice(0, 2)) {
@@ -743,9 +802,7 @@ class App {
         } else if (type === 'artist') {
           const artistName = decodeURIComponent(item.getAttribute('data-name'));
           const artist = results.artists.find(a => a.name === artistName);
-          if (artist) {
-            this.openArtist(artist);
-          }
+          if (artist) this.openArtist(artist);
         }
       });
     });
@@ -753,7 +810,7 @@ class App {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ================= 3. FAVORITES VIEW (SONGS, ALBUMS, BANDS) =================
+  // ================= 3. FAVORITES VIEW =================
   switchFavTab(tab) {
     this.activeFavTab = tab;
     [this.elements.tabFavSongs, this.elements.tabFavAlbums, this.elements.tabFavBands].forEach(b => {
@@ -765,15 +822,12 @@ class App {
 
     if (tab === 'songs') {
       this.elements.tabFavSongs.classList.add('bg-red-600', 'text-white', 'shadow');
-      this.elements.tabFavSongs.classList.remove('bg-vault-850', 'text-neutral-300');
       this.elements.panelFavSongs.classList.remove('hidden');
     } else if (tab === 'albums') {
       this.elements.tabFavAlbums.classList.add('bg-red-600', 'text-white', 'shadow');
-      this.elements.tabFavAlbums.classList.remove('bg-vault-850', 'text-neutral-300');
       this.elements.panelFavAlbums.classList.remove('hidden');
     } else if (tab === 'bands') {
       this.elements.tabFavBands.classList.add('bg-red-600', 'text-white', 'shadow');
-      this.elements.tabFavBands.classList.remove('bg-vault-850', 'text-neutral-300');
       this.elements.panelFavBands.classList.remove('hidden');
     }
 
@@ -795,14 +849,13 @@ class App {
   renderFavoritesView() {
     this.updateFavoritesBadges();
 
-    // 1. Render Favorite Songs
+    // Favorite Songs
     const songs = storage.getFavoriteSongs();
     if (songs.length === 0) {
       this.elements.favSongsContainer.innerHTML = `
         <div class="p-12 text-center text-neutral-400">
           <i data-lucide="music" class="w-10 h-10 text-neutral-600 mx-auto mb-2"></i>
           <p class="text-sm font-semibold text-neutral-300">No favorite songs yet</p>
-          <p class="text-xs text-neutral-500 mt-0.5">Click the heart icon on any song to save it here</p>
         </div>
       `;
     } else {
@@ -850,14 +903,13 @@ class App {
       });
     }
 
-    // 2. Render Favorite Albums
+    // Favorite Albums
     const albums = storage.getFavoriteAlbums();
     if (albums.length === 0) {
       this.elements.favAlbumsContainer.innerHTML = `
         <div class="col-span-full p-12 text-center text-neutral-400 border border-dashed border-vault-800 rounded-3xl">
           <i data-lucide="disc" class="w-10 h-10 text-neutral-600 mx-auto mb-2"></i>
           <p class="text-sm font-semibold text-neutral-300">No favorite albums yet</p>
-          <p class="text-xs text-neutral-500 mt-0.5">Click "Favorite Album" when exploring an album to keep it here</p>
         </div>
       `;
     } else {
@@ -883,14 +935,13 @@ class App {
       });
     }
 
-    // 3. Render Favorite Bands
+    // Favorite Bands
     const bands = storage.getFavoriteBands();
     if (bands.length === 0) {
       this.elements.favBandsContainer.innerHTML = `
         <div class="col-span-full p-12 text-center text-neutral-400 border border-dashed border-vault-800 rounded-3xl">
           <i data-lucide="users" class="w-10 h-10 text-neutral-600 mx-auto mb-2"></i>
           <p class="text-sm font-semibold text-neutral-300">No favorite bands yet</p>
-          <p class="text-xs text-neutral-500 mt-0.5">Click "Favorite Band" on an artist page to add them here</p>
         </div>
       `;
     } else {
@@ -916,7 +967,7 @@ class App {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ================= 4. ARTIST / DISCOGRAPHY VIEW =================
+  // ================= 4. ARTIST VIEW =================
   async openArtist(band) {
     this.selectedBand = band;
     this.navigateTo('artist', { band }, true);
@@ -1052,7 +1103,7 @@ class App {
     }
   }
 
-  // ================= 5. ALBUM TRACKLIST VIEW (YT MUSIC STYLE) =================
+  // ================= 5. ALBUM VIEW =================
   async openAlbum(album) {
     this.selectedAlbum = album;
     this.navigateTo('album', { album, band: this.selectedBand }, true);
@@ -1167,9 +1218,12 @@ class App {
           </td>
 
           <td class="py-3 px-4 text-center">
-            <div class="flex items-center justify-center gap-1">
+            <div class="flex items-center justify-center gap-1.5">
               <button class="btn-row-like p-1.5 text-neutral-500 hover:text-red-500 transition-colors" data-track-id="${track.id}" title="Favorite">
                 <i data-lucide="heart" class="w-4 h-4 ${isFav ? 'fill-red-500 text-red-500' : ''}"></i>
+              </button>
+              <button class="btn-row-lyrics p-1.5 text-neutral-500 hover:text-amber-400 transition-colors" data-track-id="${track.id}" title="Lyrics">
+                <i data-lucide="align-left" class="w-4 h-4"></i>
               </button>
               <a href="https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}" target="_blank" rel="noopener noreferrer" class="p-1.5 text-neutral-500 hover:text-red-400 transition-colors" title="Listen on YouTube Music">
                 <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
@@ -1182,12 +1236,10 @@ class App {
 
     this.elements.albumTracksTbody.querySelectorAll('.track-row').forEach(row => {
       row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-row-like') || e.target.closest('a')) return;
+        if (e.target.closest('.btn-row-like') || e.target.closest('.btn-row-lyrics') || e.target.closest('a')) return;
         const trackId = row.getAttribute('data-track-id');
         const track = tracks.find(t => t.id === trackId);
-        if (track) {
-          this.player.playTrack(track, album, tracks);
-        }
+        if (track) this.player.playTrack(track, album, tracks);
       });
     });
 
@@ -1205,6 +1257,15 @@ class App {
       });
     });
 
+    this.elements.albumTracksTbody.querySelectorAll('.btn-row-lyrics').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const trackId = btn.getAttribute('data-track-id');
+        const track = tracks.find(t => t.id === trackId);
+        if (track) this.openLyricsModal(track);
+      });
+    });
+
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -1218,7 +1279,7 @@ class App {
     }
   }
 
-  // ================= 6. PLAYER EVENT HANDLERS =================
+  // ================= 6. PLAYER EVENT HANDLERS & LYRICS =================
   handleTrackChange(track, album) {
     this.elements.playerTrackTitle.textContent = track.title;
     this.elements.playerTrackArtist.textContent = track.artist;
@@ -1237,9 +1298,7 @@ class App {
     const isFav = storage.isFavoriteSong(track.id);
     this.updatePlayerLikeIcon(isFav);
 
-    // Update Direct YouTube Music Link
     this.elements.btnPlayerYtm.href = this.player.getYoutubeMusicUrl();
-
     this.elements.playerCompletionPct.textContent = '0%';
     this.elements.playerProgressFill.style.width = '0%';
 
@@ -1248,11 +1307,22 @@ class App {
     }
   }
 
+  /**
+   * Play button changes to Stop/Pause while listening!
+   */
   handlePlayStateChange(isPlaying) {
     if (isPlaying) {
-      this.elements.playerPlayIcon.setAttribute('data-lucide', 'pause');
+      // Change to Stop / Pause icon
+      this.elements.playerPlayIcon.setAttribute('data-lucide', 'square');
+      this.elements.btnPlayerPlayToggle.title = 'Stop / Pause';
+      this.elements.btnPlayerPlayToggle.classList.add('bg-red-500', 'text-white');
+      this.elements.btnPlayerPlayToggle.classList.remove('bg-white', 'text-vault-950');
     } else {
+      // Change back to Play icon
       this.elements.playerPlayIcon.setAttribute('data-lucide', 'play');
+      this.elements.btnPlayerPlayToggle.title = 'Play';
+      this.elements.btnPlayerPlayToggle.classList.remove('bg-red-500', 'text-white');
+      this.elements.btnPlayerPlayToggle.classList.add('bg-white', 'text-vault-950');
     }
     if (window.lucide) window.lucide.createIcons();
   }
@@ -1291,8 +1361,24 @@ class App {
     }
   }
 
+  async openLyricsModal(track = null) {
+    const targetTrack = track || this.player.currentTrack;
+    if (!targetTrack) {
+      this.showToast('Play a song first to view lyrics', 'info');
+      return;
+    }
+
+    this.elements.modalLyrics.classList.remove('hidden');
+    this.elements.modalLyrics.classList.add('flex');
+    this.elements.lyricsModalTitle.textContent = targetTrack.title;
+    this.elements.lyricsModalArtist.textContent = targetTrack.artist;
+    this.elements.lyricsContentText.textContent = `Fetching lyrics for "${targetTrack.title}"...`;
+
+    const lyrics = await MusicAPI.getLyrics(targetTrack.artist, targetTrack.title);
+    this.elements.lyricsContentText.textContent = lyrics;
+  }
+
   updatePlayerLikeIcon(isFav) {
-    const icon = this.elements.btnPlayerLike.querySelector('svg') || this.elements.btnPlayerLike.querySelector('i');
     if (isFav) {
       this.elements.btnPlayerLike.classList.add('text-red-500');
       this.elements.btnPlayerLike.classList.remove('text-neutral-400');
@@ -1314,7 +1400,6 @@ class App {
     }
   }
 
-  // ================= 7. ARTIST BIO MODAL =================
   async openArtistBioModal() {
     if (!this.selectedBand) return;
 
@@ -1325,7 +1410,6 @@ class App {
     this.elements.bioModalMembers.innerHTML = `<span class="text-xs text-neutral-500">Loading members...</span>`;
 
     const bio = await MusicAPI.getArtistBio(this.selectedBand.name);
-
     this.elements.bioModalExtract.textContent = bio.extract;
 
     this.elements.bioModalMembers.innerHTML = bio.members.map(m => `
@@ -1343,7 +1427,6 @@ class App {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // ================= 8. TOAST NOTIFICATIONS =================
   showToast(message, type = 'info') {
     const toast = document.createElement('div');
     let border = 'border-vault-700';
