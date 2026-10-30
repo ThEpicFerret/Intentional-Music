@@ -145,6 +145,7 @@ class App {
       btnGoogleLogin: document.getElementById('btn-google-login'),
       googleLoginLabel: document.getElementById('google-login-label'),
       btnExecuteGoogleLogin: document.getElementById('btn-execute-google-login'),
+      btnDisconnectGoogle: document.getElementById('btn-disconnect-google'),
       btnCloseGoogleModal: document.getElementById('btn-close-google-modal'),
 
       modalArtistBio: document.getElementById('modal-artist-bio'),
@@ -351,6 +352,14 @@ class App {
       this.showToast('Opened YouTube Music account session in browser!', 'success');
     });
 
+    this.elements.btnDisconnectGoogle?.addEventListener('click', () => {
+      storage.setUserProfile(null);
+      this.checkUserProfile();
+      this.elements.modalGoogleLogin.classList.add('hidden');
+      this.elements.modalGoogleLogin.classList.remove('flex');
+      this.showToast('YouTube Music session disconnected.', 'info');
+    });
+
     // Settings Modal
     this.elements.btnSettings.addEventListener('click', () => {
       this.elements.modalSettings.classList.remove('hidden');
@@ -464,11 +473,13 @@ class App {
   checkUserProfile() {
     const profile = storage.getUserProfile();
     if (profile) {
-      this.elements.googleLoginLabel.textContent = profile.name;
+      this.elements.googleLoginLabel.textContent = profile.name || 'Connected';
       this.elements.btnGoogleLogin.classList.add('bg-red-950/40', 'border-red-800/60');
+      this.elements.btnDisconnectGoogle?.classList.remove('hidden');
     } else {
       this.elements.googleLoginLabel.textContent = 'YouTube Login';
       this.elements.btnGoogleLogin.classList.remove('bg-red-950/40', 'border-red-800/60');
+      this.elements.btnDisconnectGoogle?.classList.add('hidden');
     }
   }
 

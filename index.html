@@ -444,18 +444,30 @@
 
   <!-- ================= DOCKED YOUTUBE PLAYER CONTAINER ================= -->
   <!-- Plays the full song directly from YouTube -->
-  <div id="youtube-player-container" class="hidden fixed bottom-24 right-4 z-50 w-72 h-44 bg-vault-900 border border-vault-700 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-lg">
+  <div id="youtube-player-container" class="hidden fixed bottom-24 right-4 z-50 w-80 h-48 bg-vault-900 border border-vault-700 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-lg">
     <div class="p-1.5 bg-vault-950 flex items-center justify-between border-b border-vault-800 text-[11px] px-3 font-semibold text-neutral-300">
-      <span class="flex items-center gap-1.5">
-        <i data-lucide="youtube" class="w-3.5 h-3.5 text-red-500"></i>
-        YouTube Audio Player
+      <span class="flex items-center gap-1.5 truncate max-w-[180px]">
+        <i data-lucide="youtube" class="w-3.5 h-3.5 text-red-500 shrink-0"></i>
+        <span id="yt-player-dock-title" class="truncate">YouTube Player</span>
       </span>
-      <button id="btn-minimize-yt" class="text-neutral-400 hover:text-white" title="Close/Hide">
-        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-      </button>
+      <div class="flex items-center gap-2">
+        <a id="btn-dock-ytm-link" href="https://music.youtube.com" target="_blank" rel="noopener noreferrer" class="text-neutral-400 hover:text-red-400 flex items-center gap-1 text-[10px]" title="Open full track in YouTube Music">
+          <span>YTM</span>
+          <i data-lucide="external-link" class="w-3 h-3"></i>
+        </a>
+        <button id="btn-minimize-yt" class="text-neutral-400 hover:text-white" title="Close/Hide">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
     </div>
     <div class="w-full h-full pb-6 bg-black">
-      <div id="youtube-player-frame" class="w-full h-full"></div>
+      <iframe 
+        id="youtube-player-iframe" 
+        src="" 
+        class="w-full h-full border-0" 
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+        allowfullscreen>
+      </iframe>
     </div>
   </div>
 
@@ -506,6 +518,9 @@
         <button id="btn-execute-google-login" class="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 shadow">
           <i data-lucide="external-link" class="w-4 h-4"></i>
           <span>Open YouTube Music Session</span>
+        </button>
+        <button id="btn-disconnect-google" class="hidden w-full py-2 px-4 rounded-xl bg-vault-800 hover:bg-vault-700 text-neutral-300 font-semibold text-xs transition-colors">
+          Disconnect YouTube Music
         </button>
         <button id="btn-close-google-modal" class="text-xs text-neutral-400 hover:text-white transition-colors">
           Close

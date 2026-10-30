@@ -255,7 +255,7 @@ export class MusicAPI {
    */
   static async getAlbumTracks(rawCollectionId, albumTitle, artistName) {
     try {
-      const url = `https://itunes.apple.com/lookup?id=${rawCollectionId}&entity=song`;
+      const url = `https://itunes.apple.com/lookup?id=${rawCollectionId}&entity=song&limit=200`;
       const res = await fetch(url);
       const data = await res.json();
 
