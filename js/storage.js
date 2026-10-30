@@ -1,26 +1,32 @@
 /**
  * Intentional Music — Storage & Cloud Sync Manager
  * Supports:
- *  1. Local-first storage via browser LocalStorage (100% private, zero setup)
- *  2. Firebase Google Authentication + Cloud Firestore Sync (optional multi-device)
+ *  1. Local-first storage via browser LocalStorage (100% private)
+ *  2. Separate favorites for Songs, Albums, and Bands
+ *  3. Google / YouTube account profile storage
  */
 
-const STORAGE_KEY = 'intentional_music_vault_v1';
+const STORAGE_KEY = 'intentional_music_vault_v2';
 
 class StorageManager {
   constructor() {
     this.data = this.loadLocal();
-    this.firebaseApp = null;
-    this.auth = null;
-    this.db = null;
-    this.currentUser = null;
+    this.currentUser = this.data.userProfile || null;
   }
 
   loadLocal() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        return {
+          customBands: parsed.customBands || [],
+          trackProgress: parsed.trackProgress || {},
+          favoriteSongs: parsed.favoriteSongs || {}, // trackId -> track object
+          favoriteAlbums: parsed.favoriteAlbums || {}, // albumId -> album object
+          favoriteBands: parsed.favoriteBands || {}, // bandId -> band object
+          userProfile: parsed.userProfile || null
+        };
       }
     } catch (e) {
       console.warn('Failed to parse local storage, resetting:', e);
@@ -28,10 +34,10 @@ class StorageManager {
     return {
       customBands: [],
       trackProgress: {}, // trackId: { completed: bool, playCount: number, duration: number, lastPlayed: number }
-      likes: {}, // trackId: bool
-      settings: {
-        firebaseConfig: null
-      }
+      favoriteSongs: {},
+      favoriteAlbums: {},
+      favoriteBands: {},
+      userProfile: null
     };
   }
 
@@ -40,9 +46,6 @@ class StorageManager {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
     } catch (e) {
       console.error('LocalStorage write error:', e);
-    }
-    if (this.currentUser && this.db) {
-      this.syncToCloud();
     }
   }
 
@@ -76,18 +79,99 @@ class StorageManager {
     this.saveLocal();
   }
 
-  // --- Likes ---
-  isLiked(trackId) {
-    return !!this.data.likes[trackId];
+  // --- 1. FAVORITE SONGS ---
+  isFavoriteSong(trackId) {
+    return !!this.data.favoriteSongs[trackId];
   }
 
-  toggleLike(trackId) {
-    this.data.likes[trackId] = !this.data.likes[trackId];
-    this.saveLocal();
-    return this.data.likes[trackId];
+  toggleFavoriteSong(track) {
+    if (!track || !track.id) return false;
+    if (this.data.favoriteSongs[track.id]) {
+      delete this.data.favoriteSongs[track.id];
+      this.saveLocal();
+      return false;
+    } else {
+      this.data.favoriteSongs[track.id] = {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || '',
+        cover: track.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=120',
+        durationMs: track.durationMs || 0,
+        formattedDuration: track.formattedDuration || '3:30',
+        previewUrl: track.previewUrl || '',
+        youtubeSearchQuery: track.youtubeSearchQuery || `${track.artist} - ${track.title} official audio`,
+        addedAt: Date.now()
+      };
+      this.saveLocal();
+      return true;
+    }
   }
 
-  // --- Custom Bands Added by User Search ---
+  getFavoriteSongs() {
+    return Object.values(this.data.favoriteSongs || {});
+  }
+
+  // --- 2. FAVORITE ALBUMS ---
+  isFavoriteAlbum(albumId) {
+    return !!this.data.favoriteAlbums[albumId];
+  }
+
+  toggleFavoriteAlbum(album) {
+    if (!album || !album.id) return false;
+    if (this.data.favoriteAlbums[album.id]) {
+      delete this.data.favoriteAlbums[album.id];
+      this.saveLocal();
+      return false;
+    } else {
+      this.data.favoriteAlbums[album.id] = {
+        id: album.id,
+        rawCollectionId: album.rawCollectionId,
+        title: album.title,
+        artist: album.artist,
+        releaseYear: album.releaseYear,
+        cover: album.cover,
+        trackCount: album.trackCount || 0,
+        addedAt: Date.now()
+      };
+      this.saveLocal();
+      return true;
+    }
+  }
+
+  getFavoriteAlbums() {
+    return Object.values(this.data.favoriteAlbums || {});
+  }
+
+  // --- 3. FAVORITE BANDS ---
+  isFavoriteBand(bandId) {
+    return !!this.data.favoriteBands[bandId];
+  }
+
+  toggleFavoriteBand(band) {
+    if (!band || !band.id) return false;
+    if (this.data.favoriteBands[band.id]) {
+      delete this.data.favoriteBands[band.id];
+      this.saveLocal();
+      return false;
+    } else {
+      this.data.favoriteBands[band.id] = {
+        id: band.id,
+        name: band.name,
+        genre: band.genre || 'Music',
+        image: band.image,
+        addedAt: Date.now()
+      };
+      this.saveLocal();
+      return true;
+    }
+  }
+
+  getFavoriteBands() {
+    return Object.values(this.data.favoriteBands || {});
+  }
+
+  // --- CUSTOM BANDS ---
   getCustomBands() {
     return this.data.customBands || [];
   }
@@ -103,79 +187,26 @@ class StorageManager {
     return false;
   }
 
+  // --- GOOGLE / YOUTUBE ACCOUNT USER PROFILE ---
+  setUserProfile(profile) {
+    this.data.userProfile = profile;
+    this.currentUser = profile;
+    this.saveLocal();
+  }
+
+  clearUserProfile() {
+    this.data.userProfile = null;
+    this.currentUser = null;
+    this.saveLocal();
+  }
+
+  getUserProfile() {
+    return this.data.userProfile;
+  }
+
   resetAll() {
     localStorage.removeItem(STORAGE_KEY);
     this.data = this.loadLocal();
-  }
-
-  // --- Optional Firebase Cloud Sync ---
-  async initFirebase(config) {
-    if (!config || !config.apiKey) return false;
-    try {
-      // Dynamic import of Firebase Modular SDK via official CDN
-      const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js');
-      const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js');
-      const { getFirestore, doc, getDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
-
-      this.firebaseApp = initializeApp(config);
-      this.auth = getAuth(this.firebaseApp);
-      this.db = getFirestore(this.firebaseApp);
-
-      return {
-        auth: this.auth,
-        signIn: () => signInWithPopup(this.auth, new GoogleAuthProvider()),
-        signOut: () => signOut(this.auth),
-        onAuthStateChanged: (cb) => onAuthStateChanged(this.auth, async (user) => {
-          this.currentUser = user;
-          if (user) {
-            await this.loadFromCloud();
-          }
-          cb(user);
-        })
-      };
-    } catch (e) {
-      console.error('Firebase initialization error:', e);
-      return false;
-    }
-  }
-
-  async syncToCloud() {
-    if (!this.currentUser || !this.db) return;
-    try {
-      const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
-      const userRef = doc(this.db, 'users', this.currentUser.uid);
-      await setDoc(userRef, {
-        vault: this.data,
-        updatedAt: Date.now()
-      }, { merge: true });
-    } catch (e) {
-      console.warn('Cloud sync error:', e);
-    }
-  }
-
-  async loadFromCloud() {
-    if (!this.currentUser || !this.db) return;
-    try {
-      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
-      const userRef = doc(this.db, 'users', this.currentUser.uid);
-      const snap = await getDoc(userRef);
-      if (snap.exists() && snap.data().vault) {
-        const cloudVault = snap.data().vault;
-        // Merge cloud with local progress
-        this.data.trackProgress = { ...this.data.trackProgress, ...(cloudVault.trackProgress || {}) };
-        this.data.likes = { ...this.data.likes, ...(cloudVault.likes || {}) };
-        if (cloudVault.customBands) {
-          const merged = [...(this.data.customBands || [])];
-          for (const b of cloudVault.customBands) {
-            if (!merged.some(m => m.id === b.id)) merged.push(b);
-          }
-          this.data.customBands = merged;
-        }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-      }
-    } catch (e) {
-      console.warn('Cloud fetch error:', e);
-    }
   }
 }
 
