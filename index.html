@@ -392,7 +392,8 @@
   </footer>
 
   <!-- ================= INVISIBLE YOUTUBE IFRAME DOCK ================= -->
-  <div id="youtube-hidden-container" class="opacity-0 pointer-events-none absolute -left-[9999px] -top-[9999px] w-[200px] h-[200px]">
+  <!-- Placed 1px on-screen to prevent Chrome background-tab / offscreen iframe throttling -->
+  <div id="youtube-hidden-container" class="pointer-events-none fixed bottom-0 left-0 w-[1px] h-[1px] opacity-[0.01] overflow-hidden z-0">
     <div id="youtube-iframe-target"></div>
   </div>
 

@@ -285,7 +285,16 @@ class App {
     });
 
     // Player Controls
-    this.elements.btnPlayerPlayToggle.addEventListener('click', () => this.player.togglePlayPause());
+    this.elements.btnPlayerPlayToggle.addEventListener('click', () => {
+      if (!this.player.currentTrack) {
+        // If nothing is playing yet, play the first track of currently viewed album
+        if (this.selectedAlbum && this.selectedAlbum.tracks && this.selectedAlbum.tracks.length > 0) {
+          this.player.playTrack(this.selectedAlbum.tracks[0], this.selectedAlbum, this.selectedAlbum.tracks);
+          return;
+        }
+      }
+      this.player.togglePlayPause();
+    });
     this.elements.btnPlayerPrev.addEventListener('click', () => this.player.playPrev());
     this.elements.btnPlayerNext.addEventListener('click', () => this.player.playNext());
 
