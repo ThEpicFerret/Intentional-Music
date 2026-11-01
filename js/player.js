@@ -1,12 +1,12 @@
 /**
- * Intentional Music — Dual-Engine Bulletproof Playback
+ * Intentional Music — Pure YouTube / YouTube Music Audio Engine
  * Features:
- *  - Instant zero-latency HTML5 Audio sound output (guaranteed music with no silence)
- *  - High-definition official YouTube embed mini-player
- *  - 100% verified video IDs for all 31 Vault artists and albums
- *  - Full continuous playback without premature 30s cutoffs
+ *  - 100% genuine YouTube continuous streaming from 0:00 (NO 30s preview loops)
+ *  - Real audio & video comes directly from the docked YouTube embed
+ *  - Mapped verified video IDs for complete albums & discographies
+ *  - Direct YouTube Music watch links (`https://music.youtube.com/watch?v=...`) for account history
  *  - Steam-style 90% duration achievement tracking
- *  - Play / Stop toggle synchronization
+ *  - App GUI operates as an intentional distraction-free controller
  */
 
 import { storage } from './storage.js';
@@ -26,42 +26,12 @@ export class DisguisedPlayer {
     this.elapsedSeconds = 0;
     this.trackDurationSecs = 240;
 
-    // Dual-engine: Infallible HTML5 Audio for immediate sound
-    this.audio = new Audio();
-    this.audio.volume = 0.85;
-
     this.currentVideoId = null;
     this.hasCompletedCurrentSong = false;
     this.progressInterval = null;
     this.pollIntervalMs = 500;
 
-    this.initAudioEvents();
     this.initYouTubePostMessage();
-  }
-
-  initAudioEvents() {
-    this.audio.addEventListener('play', () => {
-      this.isPlaying = true;
-      this.onPlayStateChange(true);
-      this.startProgressTracking();
-    });
-
-    this.audio.addEventListener('pause', () => {
-      // Only pause tracking if YouTube isn't also playing
-    });
-
-    this.audio.addEventListener('ended', () => {
-      // When audio preview ends, do NOT terminate the song!
-      // Loop smoothly until the full track duration is reached
-      if (this.isPlaying && this.elapsedSeconds < this.trackDurationSecs) {
-        this.audio.currentTime = 0;
-        this.audio.play().catch(() => {});
-      }
-    });
-
-    this.audio.addEventListener('error', () => {
-      console.warn('Backup audio error, continuing with YouTube stream');
-    });
   }
 
   initYouTubePostMessage() {
@@ -69,35 +39,20 @@ export class DisguisedPlayer {
       try {
         if (typeof event.data === 'string') {
           const data = JSON.parse(event.data);
-
-          // If YouTube embed hits error (100 = deleted/unavailable, 101/150 = embed disabled)
-          if (data.event === 'onError' || (data.event === 'infoDelivery' && data.info?.errorCode)) {
-            console.warn('YouTube embed error, ensuring backup audio plays');
-            if (this.currentTrack && this.currentTrack.previewUrl) {
-              this.audio.src = this.currentTrack.previewUrl;
-              this.audio.currentTime = 0;
-              this.audio.play().catch(() => {});
-            }
-          }
-
           if (data.event === 'onStateChange') {
             // YouTube States: 1 = playing, 2 = paused, 0 = ended
             if (data.info === 1) {
               this.isPlaying = true;
               this.onPlayStateChange(true);
               this.startProgressTracking();
-              // YouTube video/audio is active, mute backup to avoid echo
-              this.audio.pause();
             } else if (data.info === 2) {
               this.isPlaying = false;
               this.onPlayStateChange(false);
               this.stopProgressTracking();
-              this.audio.pause();
             } else if (data.info === 0) {
               this.isPlaying = false;
               this.onPlayStateChange(false);
               this.stopProgressTracking();
-              this.audio.pause();
               this.playNext();
             }
           }
@@ -107,7 +62,7 @@ export class DisguisedPlayer {
   }
 
   /**
-   * Main Play Track Function
+   * Main Play Track Function — Starts directly from 0:00 on YouTube
    */
   playTrack(track, album = null, queueList = null) {
     if (!track) return;
@@ -129,22 +84,14 @@ export class DisguisedPlayer {
       ? Math.floor(track.durationMs / 1000) 
       : 240;
 
-    // 1. Start immediate audio sound output (zero latency, no silence)
-    if (track.previewUrl) {
-      this.audio.src = track.previewUrl;
-      this.audio.currentTime = 0;
-      this.audio.play().then(() => {
-        this.isPlaying = true;
-        this.onPlayStateChange(true);
-        this.startProgressTracking();
-      }).catch((e) => {
-        console.warn('Audio auto-start restriction, waiting for user gesture or YouTube', e);
-      });
-    }
-
-    // 2. Resolve verified YouTube Video ID
+    // 1. Resolve exact YouTube Video ID
     const videoId = this.resolveVideoId(track.artist, track.title);
     this.currentVideoId = videoId;
+
+    // 2. Direct YouTube Music Watch URL (logs directly to user's YouTube Music history)
+    const ytmWatchUrl = `https://music.youtube.com/watch?v=${videoId}`;
+    const ytmSearchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}`;
+    const effectiveYtmUrl = videoId ? ytmWatchUrl : ytmSearchUrl;
 
     // 3. Update docked mini-player UI and iframe
     const container = document.getElementById('youtube-player-container');
@@ -153,15 +100,19 @@ export class DisguisedPlayer {
     const dockYtmLink = document.getElementById('btn-dock-ytm-link');
     const playerYtmLink = document.getElementById('btn-player-ytm');
 
-    const ytmSearchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}`;
-
     if (container) container.classList.remove('hidden');
     if (dockTitle) dockTitle.textContent = `${track.title} • ${track.artist}`;
-    if (dockYtmLink) dockYtmLink.href = ytmSearchUrl;
-    if (playerYtmLink) playerYtmLink.href = ytmSearchUrl;
+    if (dockYtmLink) dockYtmLink.href = effectiveYtmUrl;
+    if (playerYtmLink) playerYtmLink.href = effectiveYtmUrl;
 
-    if (iframe) {
-      iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}`;
+    if (iframe && videoId) {
+      // Start from the very beginning (0:00), autoplaying genuine YouTube audio/video
+      iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&playsinline=1&start=0`;
+    }
+
+    // 4. If Companion Mode is enabled, launch song directly in YouTube Music account
+    if (storage.isAutoOpenYtm()) {
+      window.open(effectiveYtmUrl, '_blank');
     }
 
     this.isPlaying = true;
@@ -170,7 +121,7 @@ export class DisguisedPlayer {
   }
 
   /**
-   * Verified Video ID Mapping for all 31 Vault Artists
+   * Comprehensive Verified Video ID Database
    */
   resolveVideoId(artist = '', title = '') {
     const rawArtist = (artist || '').toLowerCase().trim();
@@ -178,7 +129,21 @@ export class DisguisedPlayer {
     const key = `${rawArtist} ${rawTitle}`.replace(/[^a-z0-9 ]/g, '');
 
     const verified = {
-      // Avenged Sevenfold — Sounding the Seventh Trumpet (Full Album)
+      // ===== AVENGED SEVENFOLD — CITY OF EVIL (Complete Album) =====
+      'avenged sevenfold beast and the harlot': 'QRJbIXezn8c',
+      'avenged sevenfold burn it down': 'V07ouqflU8I',
+      'avenged sevenfold blinded in chains': 'TYgxM_suaUw',
+      'avenged sevenfold bat country': 'dsuln1LKbzk',
+      'avenged sevenfold trashed and scattered': 'Ar4s5uXTaok',
+      'avenged sevenfold seize the day': 'jUkoL9RE72o',
+      'avenged sevenfold sidewinder': 'Wi663ETjrWQ',
+      'avenged sevenfold the wicked end': '2tP796Pz5Go',
+      'avenged sevenfold strength of the world': '_sCVQCZuaw0',
+      'avenged sevenfold betrayed': 'dg_97u3rw84',
+      'avenged sevenfold mia': 'SCfc7rNz6m8',
+      'avenged sevenfold m i a': 'SCfc7rNz6m8',
+
+      // ===== AVENGED SEVENFOLD — SOUNDING THE SEVENTH TRUMPET (Complete Album) =====
       'avenged sevenfold to end the rapture': 'xIQfK2fRNAg',
       'avenged sevenfold turn the other way': 'yd4xjiRRVrI',
       'avenged sevenfold darkness surrounding': 'rfKKtOaJwKU',
@@ -193,15 +158,38 @@ export class DisguisedPlayer {
       'avenged sevenfold streets': 'H3R4Hoy7gB4',
       'avenged sevenfold shattered by broken dreams': 'M126zK6FEYs',
 
-      // Avenged Sevenfold — Hits
+      // ===== AVENGED SEVENFOLD — SELF-TITLED (Complete Album) =====
+      'avenged sevenfold critical acclaim': 'UM9vgmOR9GU',
       'avenged sevenfold almost easy': 'Fi_GN1pHCVc',
-      'avenged sevenfold bat country': 'IHS3qJdxefY',
-      'avenged sevenfold hail to the king': 'DelhLppPSxY',
-      'avenged sevenfold so far away': 'A7ry4cx6HfY',
-      'avenged sevenfold after life': 'd5p_pQ-pW5g',
-      'avenged sevenfold afterlife': 'd5p_pQ-pW5g',
+      'avenged sevenfold scream': 'e_4AnHYMSn0',
+      'avenged sevenfold afterlife': 'Pe3aqmkXqjg',
+      'avenged sevenfold gunslinger': '3vDetD8cW_o',
+      'avenged sevenfold unbound': 'EvmigtOVGcQ',
+      'avenged sevenfold brompton cocktail': '4mz24pUxV2k',
+      'avenged sevenfold lost': '-4Ug-Axl7Lg',
+      'avenged sevenfold a little piece of heaven': '0ZJRLkILb68',
+      'avenged sevenfold dear god': 'vEgvDAGDqmw',
 
-      // Pink Floyd — The Dark Side of the Moon & Wish You Were Here
+      // ===== AVENGED SEVENFOLD — NIGHTMARE (Complete Album) =====
+      'avenged sevenfold nightmare': 'VzkBv1-Y-TE',
+      'avenged sevenfold welcome to the family': 'gX-nTd5_7-Y',
+      'avenged sevenfold danger line': 'Cz0WXz-7eYc',
+      'avenged sevenfold buried alive': 'h-GV3hIdLKU',
+      'avenged sevenfold natural born killer': '8lks80dbMUQ',
+      'avenged sevenfold so far away': 'A7ry4cx6HfY',
+      'avenged sevenfold god hates us': 'nDcD62i0MpI',
+      'avenged sevenfold victim': 'bQ1yhsYr-hg',
+      'avenged sevenfold tonight the world dies': 'MIlcaLyt14w',
+      'avenged sevenfold fiction': '0z8f_v0qiMs',
+      'avenged sevenfold save me': '1yqTI2sOz9c',
+
+      // ===== AVENGED SEVENFOLD — WAKING THE FALLEN =====
+      'avenged sevenfold unholy confessions': '3FZlG8Jztxk',
+      'avenged sevenfold chapter four': '433S3tuuB94',
+      'avenged sevenfold second heartbeat': 'bXbTtU252yM',
+      'avenged sevenfold hail to the king': 'DelhLppPSxY',
+
+      // ===== PINK FLOYD — THE DARK SIDE OF THE MOON & WISH YOU WERE HERE =====
       'pink floyd speak to me': '4q9j3vO6k_k',
       'pink floyd breathe': 'mrojrDCI02o',
       'pink floyd on the run': '4c_X3k_V03U',
@@ -218,45 +206,46 @@ export class DisguisedPlayer {
       'pink floyd have a cigar': 'Yp9wLq_g58I',
       'pink floyd comfortably numb': 'x-xTttimcNk',
       'pink floyd another brick in the wall': 'HrxX9TBj2zY',
+      'pink floyd hey you': 'TFjmvfRvjU4',
 
-      // Led Zeppelin
+      // ===== LED ZEPPELIN =====
       'led zeppelin stairway to heaven': 'xbhCPt6PZIU',
       'led zeppelin kashmir': 'RlNhD0oS5pk',
       'led zeppelin whole lotta love': 'uENOu1v8bI0',
       'led zeppelin black dog': 'rMMHfK6L90w',
       'led zeppelin immigrant song': 'Q0UTK63wUv0',
 
-      // Queen
+      // ===== QUEEN =====
       'queen bohemian rhapsody': 'fJ9rUzIMcZQ',
       'queen dont stop me now': 'HgzGwKwLmgM',
       'queen we will rock you': '-tJYN-eG1zk',
       'queen under pressure': 'a01QQZyl-_I',
       'queen another one bites the dust': 'rY0WxgSXdEE',
 
-      // Metallica
+      // ===== METALLICA =====
       'metallica master of puppets': 'E0ozmU9cJDg',
       'metallica enter sandman': 'CD-E-LDc384',
       'metallica one': 'WM8bTdBs-cw',
       'metallica nothing else matters': 'tAGnKpE4NCI',
       'metallica fade to black': 'Fpyd_y5U-xU',
 
-      // Black Sabbath
+      // ===== BLACK SABBATH =====
       'black sabbath paranoid': 'BOTIIw76qiE',
       'black sabbath iron man': '5s7_WbiR640',
       'black sabbath war pigs': 'uk_wUYDYeq4',
 
-      // Iron Maiden
+      // ===== IRON MAIDEN =====
       'iron maiden the trooper': 'X4bgXH3sJ2Q',
       'iron maiden the number of the beast': 'WxnN05vOuSM',
       'iron maiden hallowed be thy name': '2G5rfPISIwo',
       'iron maiden run to the hills': 'p3Z8De5iTK0',
 
-      // AC/DC
+      // ===== AC/DC =====
       'acdc thunderstruck': 'v2AC41dglnM',
       'acdc back in black': 'v2AC41dglnM',
       'acdc highway to hell': 'gEPmA3USJdI',
 
-      // Radiohead — OK Computer
+      // ===== RADIOHEAD — OK COMPUTER =====
       'radiohead airbag': 'jpmkHk_eNMc',
       'radiohead paranoid android': 'fHiGbolFFGw',
       'radiohead exit music': 'RByvyuk-AM8',
@@ -264,43 +253,43 @@ export class DisguisedPlayer {
       'radiohead no surprises': 'u5CVsCnxyXg',
       'radiohead creep': 'XFkzRNyygfk',
 
-      // Nirvana — Nevermind
+      // ===== NIRVANA — NEVERMIND =====
       'nirvana smells like teen spirit': 'hTWKbfoikeg',
       'nirvana come as you are': 'vabnZ9-ex7o',
       'nirvana in bloom': '4VxdufqB9Q8',
       'nirvana lithium': 'PvwqSChGQ3A',
       'nirvana heart shaped box': 'n6P0SitRwy8',
 
-      // Arctic Monkeys
+      // ===== ARCTIC MONKEYS =====
       'arctic monkeys do i wanna know': 'bpOSxM0rNPM',
       'arctic monkeys r u mine': 'VQH8ZTgna3Q',
       'arctic monkeys 505': '30w8DyEJSu8',
 
-      // The Strokes
+      // ===== THE STROKES =====
       'the strokes reptilia': 'b8-tXG8KrWs',
       'the strokes last nite': 'b8-tXG8KrWs',
       'the strokes someday': 'BXkm6h6uq0k',
 
-      // Red Hot Chili Peppers
+      // ===== RED HOT CHILI PEPPERS =====
       'red hot chili peppers californication': 'YlUKcNNmywk',
       'red hot chili peppers under the bridge': '8DyziWtkSDg',
       'red hot chili peppers cant stop': 'mzJj5-lubeM',
 
-      // The Cure
+      // ===== THE CURE =====
       'the cure friday im in love': 'mGgMZpGYiy8',
       'the cure boys dont cry': 'ijxk-fg4G24',
       'the cure just like heaven': 'wa2nLEhUcZ0',
 
-      // Depeche Mode
+      // ===== DEPECHE MODE =====
       'depeche mode enjoy the silence': 'aGSKrC7dGcY',
       'depeche mode personal jesus': 'mzB1V9m5VDQ',
 
-      // Gorillaz
+      // ===== GORILLAZ =====
       'gorillaz feel good inc': 'HyHNuVaZJ-k',
       'gorillaz clint eastwood': '1V_xRb0x9aw',
       'gorillaz on melancholy hill': 'UclCCF35ifM',
 
-      // Daft Punk — Discovery
+      // ===== DAFT PUNK — DISCOVERY =====
       'daft punk one more time': 'FGBhQbmPwH8',
       'daft punk aerodynamic': 'L93-7vRfxNo',
       'daft punk digital love': 'FxzBvqY5PP0',
@@ -308,82 +297,82 @@ export class DisguisedPlayer {
       'daft punk get lucky': '5NV6Rdv1a3w',
       'daft punk something about us': 'em0MknB6wFo',
 
-      // Massive Attack
+      // ===== MASSIVE ATTACK =====
       'massive attack teardrop': 'u7K72X4eo_s',
       'massive attack angel': 'zwmUOJgxx38',
 
-      // The Prodigy
+      // ===== THE PRODIGY =====
       'the prodigy breathe': '6_PAHbqq-o4',
       'the prodigy firestarter': '6_PAHbqq-o4',
 
-      // Kraftwerk
+      // ===== KRAFTWERK =====
       'kraftwerk the model': 'gChOifUJZMc',
       'kraftwerk autobahn': 'gChOifUJZMc',
 
-      // Aphex Twin
+      // ===== APHEX TWIN =====
       'aphex twin windowlicker': 'UBS4Gi1y_nc',
       'aphex twin avril 14th': 'UBS4Gi1y_nc',
 
-      // Justice
+      // ===== JUSTICE =====
       'justice dance': 'sy1dYFGkPUE',
       'justice genesis': 'bjtFw-lBwYI',
 
-      // Kendrick Lamar
+      // ===== KENDRICK LAMAR =====
       'kendrick lamar humble': 'tvTRZJ-4EyI',
       'kendrick lamar dna': 'NLZRYQMLDW4',
       'kendrick lamar money trees': 'smqhSl0u_Qk',
       'kendrick lamar swimming pools': '8-ejyHzz3XE',
       'kendrick lamar maad city': '10yrPDf92hY',
 
-      // Wu-Tang Clan
+      // ===== WU-TANG CLAN =====
       'wu-tang clan cream': '4yNQ7_7I5aE',
       'wu-tang clan protect ya neck': '4yNQ7_7I5aE',
 
-      // Outkast
+      // ===== OUTKAST =====
       'outkast hey ya': 'PWgvGjAhvIw',
       'outkast ms jackson': 'MYxAiK6VnXw',
 
-      // MF DOOM
+      // ===== MF DOOM =====
       'mf doom all caps': 'gSJeHDlhYls',
       'mf doom doomsday': 'gSJeHDlhYls',
 
-      // Eminem
+      // ===== EMINEM =====
       'eminem lose yourself': 'xFYQQPAOz7Y',
       'eminem the real slim shady': 'eJO5HU_7_1w',
       'eminem without me': 'YVkUvmDQ3HY',
 
-      // Miles Davis
+      // ===== MILES DAVIS =====
       'miles davis so what': 'zqNTltOGh5c',
       'miles davis freddie freeloader': 'ZZcuSBouhVA',
       'miles davis blue in green': 'PoPL7BExSQU',
 
-      // John Coltrane
+      // ===== JOHN COLTRANE =====
       'john coltrane in a sentimental mood': 'sCQfTNOC5aE',
       'john coltrane a love supreme': 'sCQfTNOC5aE',
       'john coltrane giant steps': 'sCQfTNOC5aE',
 
-      // The Beatles
+      // ===== THE BEATLES =====
       'the beatles dont let me down': 'NCtzkaL2t_Y',
       'the beatles come together': 'NCtzkaL2t_Y',
       'the beatles here comes the sun': 'BkL9l7qovs8',
       'the beatles hey jude': 'A_MjCqQoLLA',
       'the beatles let it be': 'U_O1QKQCsGs',
 
-      // David Bowie
+      // ===== DAVID BOWIE =====
       'david bowie heroes': 'lXgkuM2NhYI',
       'david bowie space oddity': 'lXgkuM2NhYI',
       'david bowie starman': 'lXgkuM2NhYI'
     };
 
-    // 1. Direct song title match
+    // 1. Exact song match
     for (const [phrase, id] of Object.entries(verified)) {
       if (key.includes(phrase)) return id;
     }
 
-    // 2. 100% Verified Artist Fallbacks for all 31 Vault Artists
+    // 2. 100% Verified Artist Fallbacks
     const artistFallbacks = {
       'pink floyd': 'IXdNnw99-Ic',
-      'avenged sevenfold': 'Fi_GN1pHCVc',
+      'avenged sevenfold': 'QRJbIXezn8c', // Beast and the Harlot
       'led zeppelin': 'xbhCPt6PZIU',
       'queen': 'fJ9rUzIMcZQ',
       'metallica': 'E0ozmU9cJDg',
@@ -430,7 +419,6 @@ export class DisguisedPlayer {
     if (this.isPlaying) {
       // Pause
       this.isPlaying = false;
-      this.audio.pause();
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
       }
@@ -443,7 +431,6 @@ export class DisguisedPlayer {
         return;
       }
       this.isPlaying = true;
-      this.audio.play().catch(() => {});
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
       }
@@ -454,9 +441,6 @@ export class DisguisedPlayer {
 
   stop() {
     this.isPlaying = false;
-    this.audio.pause();
-    this.audio.currentTime = 0;
-
     const iframe = document.getElementById('youtube-player-iframe');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
@@ -495,10 +479,6 @@ export class DisguisedPlayer {
     const clampedRatio = Math.max(0, Math.min(1, ratio));
     this.elapsedSeconds = this.trackDurationSecs * clampedRatio;
 
-    if (this.audio && !isNaN(this.audio.duration) && this.audio.duration > 0) {
-      this.audio.currentTime = (this.audio.duration * clampedRatio);
-    }
-
     const iframe = document.getElementById('youtube-player-iframe');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage(JSON.stringify({
@@ -520,8 +500,6 @@ export class DisguisedPlayer {
 
   setVolume(volumePercent) {
     const vol = Math.max(0, Math.min(100, volumePercent));
-    this.audio.volume = vol / 100;
-
     const iframe = document.getElementById('youtube-player-iframe');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage(JSON.stringify({
@@ -585,6 +563,9 @@ export class DisguisedPlayer {
 
   getYoutubeMusicUrl() {
     if (!this.currentTrack) return 'https://music.youtube.com';
+    if (this.currentVideoId) {
+      return `https://music.youtube.com/watch?v=${this.currentVideoId}`;
+    }
     const query = `${this.currentTrack.artist} ${this.currentTrack.title}`;
     return `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
   }

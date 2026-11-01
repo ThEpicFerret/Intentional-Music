@@ -160,6 +160,9 @@ class App {
       btnCloseSettings: document.getElementById('btn-close-settings'),
       btnRestoreAllBands: document.getElementById('btn-restore-all-bands'),
       btnResetStorage: document.getElementById('btn-reset-storage'),
+      toggleAutoOpenYtm: document.getElementById('toggle-auto-open-ytm'),
+      toggleModalAutoOpenYtm: document.getElementById('toggle-modal-auto-open-ytm'),
+      btnAlbumYtmLink: document.getElementById('btn-album-ytm-link'),
 
       toastContainer: document.getElementById('toast-container')
     };
@@ -360,7 +363,23 @@ class App {
       this.showToast('YouTube Music session disconnected.', 'info');
     });
 
-    // Settings Modal
+    // Companion Mode Toggle
+    const syncYtmToggles = (checked) => {
+      storage.setAutoOpenYtm(checked);
+      if (this.elements.toggleAutoOpenYtm) this.elements.toggleAutoOpenYtm.checked = checked;
+      if (this.elements.toggleModalAutoOpenYtm) this.elements.toggleModalAutoOpenYtm.checked = checked;
+      this.showToast(checked ? 'Companion Mode: Auto-launching in YouTube Music' : 'In-App Player Active', 'info');
+    };
+
+    if (this.elements.toggleAutoOpenYtm) {
+      this.elements.toggleAutoOpenYtm.checked = storage.isAutoOpenYtm();
+      this.elements.toggleAutoOpenYtm.addEventListener('change', (e) => syncYtmToggles(e.target.checked));
+    }
+    if (this.elements.toggleModalAutoOpenYtm) {
+      this.elements.toggleModalAutoOpenYtm.checked = storage.isAutoOpenYtm();
+      this.elements.toggleModalAutoOpenYtm.addEventListener('change', (e) => syncYtmToggles(e.target.checked));
+    }
+
     this.elements.btnSettings.addEventListener('click', () => {
       this.elements.modalSettings.classList.remove('hidden');
       this.elements.modalSettings.classList.add('flex');
@@ -444,6 +463,9 @@ class App {
     this.elements.btnPlayFullAlbum.addEventListener('click', () => {
       if (this.selectedAlbum && this.selectedAlbum.tracks && this.selectedAlbum.tracks.length > 0) {
         this.player.playTrack(this.selectedAlbum.tracks[0], this.selectedAlbum, this.selectedAlbum.tracks);
+        if (storage.isAutoOpenYtm()) {
+          window.open(this.player.getYoutubeMusicUrl(), '_blank');
+        }
         this.showToast(`Playing ${this.selectedAlbum.title} in order`, 'info');
       }
     });
@@ -1136,6 +1158,10 @@ class App {
       album.tracks = tracks;
     }
 
+    if (this.elements.btnAlbumYtmLink) {
+      this.elements.btnAlbumYtmLink.href = `https://music.youtube.com/search?q=${encodeURIComponent(album.artist + ' ' + album.title)}`;
+    }
+
     this.renderAlbumView();
   }
 
@@ -1236,8 +1262,9 @@ class App {
               <button class="btn-row-lyrics p-1.5 text-neutral-500 hover:text-amber-400 transition-colors" data-track-id="${track.id}" title="Lyrics">
                 <i data-lucide="align-left" class="w-4 h-4"></i>
               </button>
-              <a href="https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}" target="_blank" rel="noopener noreferrer" class="p-1.5 text-neutral-500 hover:text-red-400 transition-colors" title="Listen on YouTube Music">
-                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              <a href="${this.player.resolveVideoId(track.artist, track.title) ? `https://music.youtube.com/watch?v=${this.player.resolveVideoId(track.artist, track.title)}` : `https://music.youtube.com/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}`}" target="_blank" rel="noopener noreferrer" class="px-2 py-0.5 rounded bg-red-950/70 border border-red-800/60 text-red-400 hover:bg-red-800 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-semibold" title="Listen on YouTube Music (Saves to your account history)">
+                <span>YTM</span>
+                <i data-lucide="external-link" class="w-3 h-3"></i>
               </a>
             </div>
           </td>
@@ -1250,7 +1277,12 @@ class App {
         if (e.target.closest('.btn-row-like') || e.target.closest('.btn-row-lyrics') || e.target.closest('a')) return;
         const trackId = row.getAttribute('data-track-id');
         const track = tracks.find(t => t.id === trackId);
-        if (track) this.player.playTrack(track, album, tracks);
+        if (track) {
+          this.player.playTrack(track, album, tracks);
+          if (storage.isAutoOpenYtm()) {
+            window.open(this.player.getYoutubeMusicUrl(), '_blank');
+          }
+        }
       });
     });
 

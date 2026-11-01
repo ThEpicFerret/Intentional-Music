@@ -229,6 +229,15 @@ class StorageManager {
     return this.data.userProfile;
   }
 
+  isAutoOpenYtm() {
+    return !!this.data.autoOpenYtm;
+  }
+
+  setAutoOpenYtm(val) {
+    this.data.autoOpenYtm = !!val;
+    this.saveLocal();
+  }
+
   resetAll() {
     localStorage.removeItem(STORAGE_KEY);
     this.data = this.loadLocal();
